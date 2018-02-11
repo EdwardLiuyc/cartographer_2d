@@ -52,16 +52,22 @@ PoseGraph::~PoseGraph() {
 }
 
 std::vector<mapping::SubmapId> PoseGraph::InitializeGlobalSubmapPoses(
-    const int trajectory_id, 
+	const int trajectory_id, 
 	const common::Time time,
-    const std::vector<std::shared_ptr<const Submap>>& insertion_submaps) 
+	const std::vector<std::shared_ptr<const Submap>>& insertion_submaps) 
 {
 	CHECK(!insertion_submaps.empty());
 	const auto& submap_data = optimization_problem_.submap_data();
+	// 如果目前只有一个 submap
 	if (insertion_submaps.size() == 1) 
 	{
+		// 首先明确的是，optimization_problem_ 里面所有的 submap data 的位姿全是相对 global 的位姿，而不是local pose
+		// 当前只有一个 submap 时，且 optimization_problem_ 里面的 submap data 为空，即还没有开始进行
+		
+		
 		// If we don't already have an entry for the first submap, add one.
-		if (submap_data.SizeOfTrajectoryOrZero(trajectory_id) == 0) 
+		// 同时这个目标 trajectory 里一个 submap 都没有
+		if ( submap_data.SizeOfTrajectoryOrZero(trajectory_id) == 0 ) 
 		{
 			if (initial_trajectory_poses_.count(trajectory_id) > 0) 
 			{
@@ -71,44 +77,67 @@ std::vector<mapping::SubmapId> PoseGraph::InitializeGlobalSubmapPoses(
 			}
 			optimization_problem_.AddSubmap(
 				trajectory_id,
-				transform::Project2D(ComputeLocalToGlobalTransform(
-										global_submap_poses_, trajectory_id) *
-									insertion_submaps[0]->local_pose()));
+				transform::Project2D(
+					ComputeLocalToGlobalTransform(global_submap_poses_, trajectory_id) * insertion_submaps[0]->local_pose()));
 		}
-    CHECK_EQ(1, submap_data.SizeOfTrajectoryOrZero(trajectory_id));
-    const mapping::SubmapId submap_id{trajectory_id, 0};
-    CHECK(submap_data_.at(submap_id).submap == insertion_submaps.front());
-    return {submap_id};
-  }
-  CHECK_EQ(2, insertion_submaps.size());
-  const auto end_it = submap_data.EndOfTrajectory(trajectory_id);
-  CHECK(submap_data.BeginOfTrajectory(trajectory_id) != end_it);
-  const mapping::SubmapId last_submap_id = std::prev(end_it)->id;
-  if (submap_data_.at(last_submap_id).submap == insertion_submaps.front()) {
-    // In this case, 'last_submap_id' is the ID of 'insertions_submaps.front()'
-    // and 'insertions_submaps.back()' is new.
-    const auto& first_submap_pose = submap_data.at(last_submap_id).global_pose;
-    optimization_problem_.AddSubmap(
-        trajectory_id,
-        first_submap_pose *
-            pose_graph::ComputeSubmapPose(*insertion_submaps[0]).inverse() *
-            pose_graph::ComputeSubmapPose(*insertion_submaps[1]));
-    return {last_submap_id,
-            mapping::SubmapId{trajectory_id, last_submap_id.submap_index + 1}};
-  }
-  CHECK(submap_data_.at(last_submap_id).submap == insertion_submaps.back());
-  const mapping::SubmapId front_submap_id{trajectory_id,
-                                          last_submap_id.submap_index - 1};
-  CHECK(submap_data_.at(front_submap_id).submap == insertion_submaps.front());
-  return {front_submap_id, last_submap_id};
+		
+		CHECK_EQ(1, submap_data.SizeOfTrajectoryOrZero(trajectory_id));
+		const mapping::SubmapId submap_id{trajectory_id, 0};
+		CHECK(submap_data_.at(submap_id).submap == insertion_submaps.front());
+		return {submap_id};
+	}
+  
+	CHECK_EQ(2, insertion_submaps.size());
+	const auto end_it = submap_data.EndOfTrajectory(trajectory_id);
+	CHECK(submap_data.BeginOfTrajectory(trajectory_id) != end_it);
+	const mapping::SubmapId last_submap_id = std::prev(end_it)->id;
+	if (submap_data_.at(last_submap_id).submap == insertion_submaps.front()) 
+	{
+		// In this case, 'last_submap_id' is the ID of 'insertions_submaps.front()'
+		// and 'insertions_submaps.back()' is new.
+		const auto& first_submap_pose = submap_data.at(last_submap_id).global_pose;
+		optimization_problem_.AddSubmap(
+			trajectory_id,
+			first_submap_pose *
+				pose_graph::ComputeSubmapPose(*insertion_submaps[0]).inverse() *
+				pose_graph::ComputeSubmapPose(*insertion_submaps[1]));
+		return {last_submap_id,
+				mapping::SubmapId{trajectory_id, last_submap_id.submap_index + 1}};
+	}
+	
+	CHECK(submap_data_.at(last_submap_id).submap == insertion_submaps.back());
+	const mapping::SubmapId front_submap_id{trajectory_id,last_submap_id.submap_index - 1};
+	CHECK(submap_data_.at(front_submap_id).submap == insertion_submaps.front());
+	return {front_submap_id, last_submap_id};
 }
 
+/*
+ * 这个函数是前段与后端之间的接口！！
+ * 前端（local_trajectory_builder）处理了scan data，得到一个 match result（包含insert result）
+ * 将这个 insert result 里的 insertion_submaps 和 constant_data 传进函数
+ */
 mapping::NodeId PoseGraph::AddNode(
     std::shared_ptr<const mapping::TrajectoryNode::Data> constant_data,
     const int trajectory_id,
     const std::vector<std::shared_ptr<const Submap>>& insertion_submaps) 
 {
-	const transform::Rigid3d optimized_pose(GetLocalToGlobalTransform( trajectory_id ) * constant_data->local_pose);
+	/*
+	 * struct Data 
+	 * {
+			common::Time time;
+			// Transform to approximately gravity align the tracking frame as
+			// determined by local SLAM.
+			Eigen::Quaterniond gravity_alignment;
+			// Used for loop closure in 2D: voxel filtered returns in the
+			// 'gravity_alignment' frame.
+			sensor::PointCloud filtered_gravity_aligned_point_cloud;
+			// 这里省略了 3d 的信息
+			// The node pose in the local SLAM frame.
+			transform::Rigid3d local_pose;
+		};
+	 */
+	const transform::Rigid3d optimized_pose(
+		GetLocalToGlobalTransform( trajectory_id ) * constant_data->local_pose);
 
 	common::MutexLocker locker(&mutex_);
 	AddTrajectoryIfNeeded(trajectory_id);
@@ -151,14 +180,15 @@ void PoseGraph::AddWorkItem(const std::function<void()>& work_item)
 		work_queue_->push_back(work_item);
 }
 
-void PoseGraph::AddTrajectoryIfNeeded(const int trajectory_id) {
-  trajectory_connectivity_state_.Add(trajectory_id);
-  // Make sure we have a sampler for this trajectory.
-  if (!global_localization_samplers_[trajectory_id]) {
-    global_localization_samplers_[trajectory_id] =
-        common::make_unique<common::FixedRatioSampler>(
-            options_.global_sampling_ratio());
-  }
+void PoseGraph::AddTrajectoryIfNeeded(const int trajectory_id) 
+{
+	trajectory_connectivity_state_.Add(trajectory_id);
+	// Make sure we have a sampler for this trajectory.
+	if (!global_localization_samplers_[trajectory_id]) 
+	{
+		global_localization_samplers_[trajectory_id] = 
+			common::make_unique<common::FixedRatioSampler>(options_.global_sampling_ratio());
+	}
 }
 
 void PoseGraph::AddImuData(const int trajectory_id,
@@ -175,12 +205,6 @@ void PoseGraph::AddOdometryData(const int trajectory_id,
   AddWorkItem([=]() REQUIRES(mutex_) {
     optimization_problem_.AddOdometryData(trajectory_id, odometry_data);
   });
-}
-
-void PoseGraph::AddFixedFramePoseData(
-    const int trajectory_id,
-    const sensor::FixedFramePoseData& fixed_frame_pose_data) {
-  LOG(FATAL) << "Not yet implemented for 2D.";
 }
 
 void PoseGraph::ComputeConstraint(const mapping::NodeId& node_id,
@@ -225,15 +249,17 @@ void PoseGraph::ComputeConstraint(const mapping::NodeId& node_id,
 	}
 }
 
-void PoseGraph::ComputeConstraintsForOldNodes(
-    const mapping::SubmapId& submap_id) {
-  const auto& submap_data = submap_data_.at(submap_id);
-  for (const auto& node_id_data : optimization_problem_.node_data()) {
-    const mapping::NodeId& node_id = node_id_data.id;
-    if (submap_data.node_ids.count(node_id) == 0) {
-      ComputeConstraint(node_id, submap_id);
-    }
-  }
+void PoseGraph::ComputeConstraintsForOldNodes(const mapping::SubmapId& submap_id) 
+{
+	const auto& submap_data = submap_data_.at(submap_id);
+	for (const auto& node_id_data : optimization_problem_.node_data()) 
+	{
+		const mapping::NodeId& node_id = node_id_data.id;
+		if (submap_data.node_ids.count(node_id) == 0) 
+		{
+			ComputeConstraint(node_id, submap_id);
+		}
+	}
 }
 
 void PoseGraph::ComputeConstraintsForNode(
@@ -416,30 +442,32 @@ void PoseGraph::FreezeTrajectory(const int trajectory_id) {
 }
 
 void PoseGraph::AddSubmapFromProto(const transform::Rigid3d& global_submap_pose,
-                                   const mapping::proto::Submap& submap) {
-  if (!submap.has_submap_2d()) {
-    return;
-  }
+                                   const mapping::proto::Submap& submap) 
+{
+	if (!submap.has_submap_2d())
+		return;
 
-  const mapping::SubmapId submap_id = {submap.submap_id().trajectory_id(),
-                                       submap.submap_id().submap_index()};
-  std::shared_ptr<const Submap> submap_ptr =
-      std::make_shared<const Submap>(submap.submap_2d());
-  const transform::Rigid2d global_submap_pose_2d =
-      transform::Project2D(global_submap_pose);
+	const mapping::SubmapId submap_id = {submap.submap_id().trajectory_id(),
+										submap.submap_id().submap_index()};
+	std::shared_ptr<const Submap> submap_ptr = std::make_shared<const Submap>(submap.submap_2d());
+	const transform::Rigid2d global_submap_pose_2d = transform::Project2D(global_submap_pose);
 
-  common::MutexLocker locker(&mutex_);
-  AddTrajectoryIfNeeded(submap_id.trajectory_id);
-  submap_data_.Insert(submap_id, SubmapData());
-  submap_data_.at(submap_id).submap = submap_ptr;
-  // Immediately show the submap at the 'global_submap_pose'.
-  global_submap_poses_.Insert(submap_id,
-                              pose_graph::SubmapData{global_submap_pose_2d});
-  AddWorkItem([this, submap_id, global_submap_pose_2d]() REQUIRES(mutex_) {
-    CHECK_EQ(frozen_trajectories_.count(submap_id.trajectory_id), 1);
-    submap_data_.at(submap_id).state = SubmapState::kFinished;	// 这个函数在 loadmap 函数中被调用，即从文件里读出的地图都会被标识为 kFinished
-    optimization_problem_.InsertSubmap(submap_id, global_submap_pose_2d);
-  });
+	common::MutexLocker locker(&mutex_);
+	AddTrajectoryIfNeeded(submap_id.trajectory_id);
+	
+	submap_data_.Insert(submap_id, SubmapData());
+	submap_data_.at(submap_id).submap = submap_ptr;
+	// Immediately show the submap at the 'global_submap_pose'.
+	global_submap_poses_.Insert(submap_id, pose_graph::SubmapData{global_submap_pose_2d});
+	AddWorkItem(
+		[this, submap_id, global_submap_pose_2d]() REQUIRES(mutex_) 
+		{
+			CHECK_EQ(frozen_trajectories_.count(submap_id.trajectory_id), 1);
+			
+			// 这个函数在 loadmap 函数中被调用，即从文件里读出的地图都会被标识为 kFinished
+			submap_data_.at(submap_id).state = SubmapState::kFinished;	
+			optimization_problem_.InsertSubmap(submap_id, global_submap_pose_2d);
+		});
 }
 
 void PoseGraph::AddNodeFromProto(const transform::Rigid3d& global_pose,
@@ -572,6 +600,8 @@ void PoseGraph::RunOptimization() {
           old_global_to_new_global * mutable_trajectory_node.global_pose;
     }
   }
+  
+  // RunOptimization 其实就是一个将 local 和 global 的关系更新的过程
   global_submap_poses_ = submap_data;
 }
 
@@ -617,30 +647,37 @@ void PoseGraph::SetInitialTrajectoryPose(const int from_trajectory_id,
       InitialTrajectoryPose{to_trajectory_id, pose, time};
 }
 
+// 插补出指定时间的位姿信息 global_pose
 transform::Rigid3d PoseGraph::GetInterpolatedGlobalTrajectoryPose(
-    const int trajectory_id, const common::Time time) const {
-  CHECK(trajectory_nodes_.SizeOfTrajectoryOrZero(trajectory_id) > 0);
-  const auto it = trajectory_nodes_.lower_bound(trajectory_id, time);
-  if (it == trajectory_nodes_.BeginOfTrajectory(trajectory_id)) {
-    return trajectory_nodes_.BeginOfTrajectory(trajectory_id)->data.global_pose;
-  }
-  if (it == trajectory_nodes_.EndOfTrajectory(trajectory_id)) {
-    return std::prev(trajectory_nodes_.EndOfTrajectory(trajectory_id))
-        ->data.global_pose;
-  }
-  return transform::Interpolate(
-             transform::TimestampedTransform{std::prev(it)->data.time(),
-                                             std::prev(it)->data.global_pose},
-             transform::TimestampedTransform{it->data.time(),
-                                             it->data.global_pose},
-             time)
-      .transform;
+    const int trajectory_id, 
+	const common::Time time) const 
+{
+	CHECK(trajectory_nodes_.SizeOfTrajectoryOrZero(trajectory_id) > 0);
+	
+	// lower_bound
+	// 返回第一个在指定 time 之后的元素的迭代器
+	// 如果返回的是EndOfTrajectory(trajectory_id)， 则表示所有的数据的时间都是在 time 之前的
+	const auto it = trajectory_nodes_.lower_bound(trajectory_id, time);
+	if ( it == trajectory_nodes_.BeginOfTrajectory(trajectory_id)) 
+	{
+		return trajectory_nodes_.BeginOfTrajectory(trajectory_id)->data.global_pose;
+	}
+	if (it == trajectory_nodes_.EndOfTrajectory(trajectory_id)) 
+	{
+		return std::prev(trajectory_nodes_.EndOfTrajectory(trajectory_id))->data.global_pose;
+	}
+	
+	// 如果前面都不成立，则用前一个 node 和 当前 node，根据时间来插补出当前的姿态
+	return transform::Interpolate(
+				transform::TimestampedTransform{std::prev(it)->data.time(),std::prev(it)->data.global_pose},
+				transform::TimestampedTransform{it->data.time(),it->data.global_pose},
+				time).transform;
 }
 
-transform::Rigid3d PoseGraph::GetLocalToGlobalTransform(
-    const int trajectory_id) {
-  common::MutexLocker locker(&mutex_);
-  return ComputeLocalToGlobalTransform(global_submap_poses_, trajectory_id);
+transform::Rigid3d PoseGraph::GetLocalToGlobalTransform(const int trajectory_id) 
+{
+	common::MutexLocker locker(&mutex_);
+	return ComputeLocalToGlobalTransform(global_submap_poses_, trajectory_id);
 }
 
 std::vector<std::vector<int>> PoseGraph::GetConnectedTrajectories() {
@@ -664,34 +701,43 @@ PoseGraph::GetAllSubmapData() {
   return submaps;
 }
 
+/*
+ * 传参：
+ * 1. 全局的所有的 submap 的姿态
+ * 2. trajectory_id
+ * 函数功能：
+ * 计算从指定 trajectory 到全局的一个变换矩阵(translation,rotation)
+ */
 transform::Rigid3d PoseGraph::ComputeLocalToGlobalTransform(
     const mapping::MapById<mapping::SubmapId, pose_graph::SubmapData>& global_submap_poses,
     const int trajectory_id) const 
 {
 	auto begin_it = global_submap_poses.BeginOfTrajectory(trajectory_id);
 	auto end_it = global_submap_poses.EndOfTrajectory(trajectory_id);
+	// begin 和 end 相同则该 trajectory 有且仅有一个 submap
 	if (begin_it == end_it) 
 	{
 		const auto it = initial_trajectory_poses_.find(trajectory_id);
-		if (it != initial_trajectory_poses_.end()) {
-		return GetInterpolatedGlobalTrajectoryPose(it->second.to_trajectory_id,
-													it->second.time) *
-				it->second.relative_pose;
-		} else {
-		return transform::Rigid3d::Identity();
-		}
+		// 找到了一个 init pose，则用这个 init pose 的信息
+		if (it != initial_trajectory_poses_.end()) 
+		{
+			// 感觉这里的计算有问题？？？ TODO (edward)
+			return GetInterpolatedGlobalTrajectoryPose( it->second.to_trajectory_id,it->second.time ) *
+						it->second.relative_pose;
+		} 
+		else 
+			return transform::Rigid3d::Identity();
 	}
-  const mapping::SubmapId last_optimized_submap_id = std::prev(end_it)->id;
-  // Accessing 'local_pose' in Submap is okay, since the member is const.
-  return transform::Embed3D(
-             global_submap_poses.at(last_optimized_submap_id).global_pose) *
-         submap_data_.at(last_optimized_submap_id)
-             .submap->local_pose()
-             .inverse();
+	
+	const mapping::SubmapId last_optimized_submap_id = std::prev(end_it)->id;
+	// Accessing 'local_pose' in Submap is okay, since the member is const.
+	return transform::Embed3D(global_submap_poses.at(last_optimized_submap_id).global_pose) *
+			submap_data_.at(last_optimized_submap_id).submap->local_pose().inverse();
 }
 
 mapping::PoseGraph::SubmapData PoseGraph::GetSubmapDataUnderLock(
-    const mapping::SubmapId& submap_id) {
+    const mapping::SubmapId& submap_id) 
+{
   const auto it = submap_data_.find(submap_id);
   if (it == submap_data_.end()) {
     return {};

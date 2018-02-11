@@ -57,6 +57,7 @@ struct TrajectoryNode {
   std::shared_ptr<const Data> constant_data;
 
   // The node pose in the global SLAM frame.
+  // 这个 node 在全局的位姿
   transform::Rigid3d global_pose;
 };
 

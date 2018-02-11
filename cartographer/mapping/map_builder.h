@@ -77,46 +77,46 @@ public:
 	MapBuilder(const MapBuilder&) = delete;
 	MapBuilder& operator=(const MapBuilder&) = delete;
 
-  // Creates a new trajectory builder and returns its index.
-  int AddTrajectoryBuilder(
-      const std::unordered_set<std::string>& expected_sensor_ids,
-      const proto::TrajectoryBuilderOptions& trajectory_options);
+	// Creates a new trajectory builder and returns its index.
+	int AddTrajectoryBuilder(
+		const std::unordered_set<std::string>& expected_sensor_ids,
+		const proto::TrajectoryBuilderOptions& trajectory_options);
 
-  // Creates a new trajectory and returns its index. Querying the trajectory
-  // builder for it will return 'nullptr'.
-  int AddTrajectoryForDeserialization();
+	// Creates a new trajectory and returns its index. Querying the trajectory
+	// builder for it will return 'nullptr'.
+	int AddTrajectoryForDeserialization();
 
-  // Returns the TrajectoryBuilder corresponding to the specified
-  // 'trajectory_id' or 'nullptr' if the trajectory has no corresponding
-  // builder.
+	// Returns the TrajectoryBuilder corresponding to the specified
+	// 'trajectory_id' or 'nullptr' if the trajectory has no corresponding
+	// builder.
 	// 这个接口将内部的 trajectory_builder 暴露给外部来使用
 	// 外部也主要是使用 trajectory_builder 来接受所有的传感器数据
 	mapping::TrajectoryBuilder* GetTrajectoryBuilder(int trajectory_id) const;
 
-  // Marks the TrajectoryBuilder corresponding to 'trajectory_id' as finished,
-  // i.e. no further sensor data is expected.
-  void FinishTrajectory(int trajectory_id);
+	// Marks the TrajectoryBuilder corresponding to 'trajectory_id' as finished,
+	// i.e. no further sensor data is expected.
+	void FinishTrajectory(int trajectory_id);
 
-  // Must only be called if at least one unfinished trajectory exists. Returns
-  // the ID of the trajectory that needs more data before the MapBuilder is
-  // unblocked.
-  int GetBlockingTrajectoryId() const;
+	// Must only be called if at least one unfinished trajectory exists. Returns
+	// the ID of the trajectory that needs more data before the MapBuilder is
+	// unblocked.
+	int GetBlockingTrajectoryId() const;
 
-  // Fills the SubmapQuery::Response corresponding to 'submap_id'. Returns an
-  // error string on failure, or an empty string on success.
-  std::string SubmapToProto(const SubmapId& submap_id,
-                            proto::SubmapQuery::Response* response);
+	// Fills the SubmapQuery::Response corresponding to 'submap_id'. Returns an
+	// error string on failure, or an empty string on success.
+	std::string SubmapToProto(const SubmapId& submap_id,
+								proto::SubmapQuery::Response* response);
 
-  // Serializes the current state to a proto stream.
-  void SerializeState(io::ProtoStreamWriter* writer);
+	// Serializes the current state to a proto stream.
+	void SerializeState(io::ProtoStreamWriter* writer);
 
-  // Loads submaps from a proto stream into a new frozen trajectory.
-  // 读入一个现有的地图，这个功能很重要，读入的地图必须是上面这个函数生成的文件
-  void LoadMap(io::ProtoStreamReader* reader);
+	// Loads submaps from a proto stream into a new frozen trajectory.
+	// 读入一个现有的地图，这个功能很重要，读入的地图必须是上面这个函数生成的文件
+	void LoadMap(io::ProtoStreamReader* reader);
 
-  int num_trajectory_builders() const;
+	int num_trajectory_builders() const;
 
-  mapping::PoseGraph* pose_graph();
+	mapping::PoseGraph* pose_graph();
 
 private:
 	const proto::MapBuilderOptions options_;

@@ -33,15 +33,17 @@ namespace mapping {
 // connected trajectories i and j?") and the transitive connectivity.
 //
 // This class is thread-safe.
-class ConnectedComponents {
- public:
-  ConnectedComponents();
+class ConnectedComponents 
+{
+public:
+	ConnectedComponents();
 
-  ConnectedComponents(const ConnectedComponents&) = delete;
-  ConnectedComponents& operator=(const ConnectedComponents&) = delete;
+	ConnectedComponents(const ConnectedComponents&) = delete;
+	ConnectedComponents& operator=(const ConnectedComponents&) = delete;
 
-  // Add a trajectory which is initially connected to only itself.
-  void Add(int trajectory_id) EXCLUDES(lock_);
+	// Add a trajectory which is initially connected to only itself.
+	// 添加一个 trajectory_id 进来（加入到 forest_），这时这个 trajectory 只连接到自己
+	void Add(int trajectory_id) EXCLUDES(lock_);
 
   // Connect two trajectories. If either trajectory is untracked, it will be
   // tracked. This function is invariant to the order of its arguments. Repeated
@@ -68,11 +70,11 @@ class ConnectedComponents {
   std::vector<int> GetComponent(int trajectory_id) EXCLUDES(lock_);
 
  private:
-  // Find the representative and compresses the path to it.
-  int FindSet(int trajectory_id) REQUIRES(lock_);
-  void Union(int trajectory_id_a, int trajectory_id_b) REQUIRES(lock_);
+	// Find the representative and compresses the path to it.
+	int FindSet(int trajectory_id) REQUIRES(lock_);
+	void Union(int trajectory_id_a, int trajectory_id_b) REQUIRES(lock_);
 
-  common::Mutex lock_;
+	common::Mutex lock_;
   // Tracks transitive connectivity using a disjoint set forest, i.e. each
   // entry points towards the representative for the given trajectory.
   std::map<int, int> forest_ GUARDED_BY(lock_);

@@ -28,13 +28,15 @@ namespace mapping {
 // constraint connected to trajectories.
 //
 // This class is thread-compatible.
-class TrajectoryConnectivityState {
- public:
-  TrajectoryConnectivityState() {}
+// 这个类的功能和 connected_components 很相似
+// 区别在于多了一个时间点 last_connection_time_map_，具体意义还需要看代码（ TODO edward）
+class TrajectoryConnectivityState 
+{
+public:
+	TrajectoryConnectivityState() {}
 
-  TrajectoryConnectivityState(const TrajectoryConnectivityState&) = delete;
-  TrajectoryConnectivityState& operator=(const TrajectoryConnectivityState&) =
-      delete;
+	TrajectoryConnectivityState(const TrajectoryConnectivityState&) = delete;
+	TrajectoryConnectivityState& operator=(const TrajectoryConnectivityState&) = delete;
 
   // Add a trajectory which is initially connected to only itself.
   void Add(int trajectory_id);
@@ -49,7 +51,10 @@ class TrajectoryConnectivityState {
   // either trajectory is not being tracked, returns false, except when it is
   // the same trajectory, where it returns true. This function is invariant to
   // the order of its arguments.
-  bool TransitivelyConnected(int trajectory_id_a, int trajectory_id_b);
+  inline bool TransitivelyConnected(int trajectory_id_a, int trajectory_id_b)
+  {
+	  return connected_components_.TransitivelyConnected(trajectory_id_a,trajectory_id_b);
+  }
 
   // The trajectory IDs, grouped by connectivity.
   std::vector<std::vector<int>> Components();

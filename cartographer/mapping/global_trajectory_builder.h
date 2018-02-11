@@ -44,6 +44,7 @@ public:
 	GlobalTrajectoryBuilder& operator=(const GlobalTrajectoryBuilder&) = delete;
 
 	// 与添加其他的传感器略有不同，添加 rangefinder data 之后会有一个返回的 matching result
+	// range finder data 不会直接加入到后端，而是将这个匹配的结果放到后端里面计算
 	void AddRangefinderData(const common::Time time,
 							const Eigen::Vector3f& origin,
 							const sensor::TimedPointCloud& ranges) override 
@@ -63,6 +64,7 @@ public:
 				pose_graph_->AddNode(
 					matching_result->insertion_result->constant_data, trajectory_id_,
 					matching_result->insertion_result->insertion_submaps));
+			
 			CHECK_EQ(node_id->trajectory_id, trajectory_id_);
 		}
 		if (local_slam_result_callback_) 
@@ -80,16 +82,17 @@ public:
 	void AddSensorData(const sensor::ImuData& imu_data) override 
 	{
 		local_trajectory_builder_.AddImuData(imu_data);
-		pose_graph_->AddImuData(trajectory_id_, imu_data);
+		pose_graph_->AddImuData( trajectory_id_, imu_data );
 	}
 
 	void AddSensorData(const sensor::OdometryData& odometry_data) override 
 	{
 		CHECK(odometry_data.pose.IsValid()) << odometry_data.pose;
 		local_trajectory_builder_.AddOdometryData(odometry_data);
-		pose_graph_->AddOdometryData(trajectory_id_, odometry_data);
+		pose_graph_->AddOdometryData( trajectory_id_, odometry_data );
 	}
 
+	// 2d slam 中这个部分暂时并没有实现
 	void AddSensorData(const sensor::FixedFramePoseData& fixed_frame_pose) override 
 	{
 		CHECK(fixed_frame_pose.pose.IsValid()) << fixed_frame_pose.pose;

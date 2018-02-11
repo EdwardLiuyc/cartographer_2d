@@ -82,15 +82,18 @@ public:
 	// 所以其实优化问题的处理同样是异步的，后端完全处于一个异步状态
 	void AddImuData(int trajectory_id, const sensor::ImuData& imu_data) override EXCLUDES(mutex_);
 	void AddOdometryData(int trajectory_id, const sensor::OdometryData& odometry_data) override EXCLUDES(mutex_);
-	// WARNING 这个功能在 mapping 2d 中暂时没有实现，还不能用
-	void AddFixedFramePoseData( int trajectory_id, const sensor::FixedFramePoseData& fixed_frame_pose_data);
+	// 这个功能在 mapping 2d 中暂时没有实现，还不能用
+	void AddFixedFramePoseData( int trajectory_id, const sensor::FixedFramePoseData& fixed_frame_pose_data)
+	{
+		LOG(FATAL) << "Not yet implemented for 2D.";
+	}
 	// 以下两个函数都是从 proto 中读出数据，主要是针对 loadmap 的情况
 	void AddSubmapFromProto(const transform::Rigid3d& global_submap_pose,
-                          const mapping::proto::Submap& submap) override;
+							const mapping::proto::Submap& submap) override;
 	void AddNodeFromProto(const transform::Rigid3d& global_pose,
-                        const mapping::proto::Node& node) override;
+							const mapping::proto::Node& node) override;
 	void AddNodeToSubmap(const mapping::NodeId& node_id,
-                       const mapping::SubmapId& submap_id) override;
+							const mapping::SubmapId& submap_id) override;
 	void AddSerializedConstraints(
 		const std::vector<Constraint>& constraints) override;
 	void AddTrimmer(std::unique_ptr<mapping::PoseGraphTrimmer> trimmer) override;
@@ -142,6 +145,22 @@ private:
 		std::set<mapping::NodeId> node_ids;
 
 		SubmapState state = SubmapState::kActive;
+	};
+	
+	// Allows querying and manipulating the pose graph by the 'trimmers_'. The
+	// 'mutex_' of the pose graph is held while this class is used.
+	class TrimmingHandle : public mapping::Trimmable 
+	{
+	public:
+		TrimmingHandle(PoseGraph* parent);
+		~TrimmingHandle() override {}
+
+		int num_submaps(int trajectory_id) const override;
+		void MarkSubmapAsTrimmed(const mapping::SubmapId& submap_id)
+			REQUIRES(parent_->mutex_) override;
+
+	private:
+		PoseGraph* const parent_;
 	};
 
 	// Handles a new work item.
@@ -212,15 +231,15 @@ private:
 	// 这是一个待处理（挂起的）工作队列，会添加到线程池中执行
 	std::unique_ptr<std::deque<std::function<void()>>> work_queue_ GUARDED_BY(mutex_);
 
-  // How our various trajectories are related.
-  mapping::TrajectoryConnectivityState trajectory_connectivity_state_;
+	// How our various trajectories are related.
+	mapping::TrajectoryConnectivityState trajectory_connectivity_state_;
 
-  // We globally localize a fraction of the nodes from each trajectory.
-  std::unordered_map<int, std::unique_ptr<common::FixedRatioSampler>>
-      global_localization_samplers_ GUARDED_BY(mutex_);
+	// We globally localize a fraction of the nodes from each trajectory.
+	std::unordered_map<int, std::unique_ptr<common::FixedRatioSampler>>
+		global_localization_samplers_ GUARDED_BY(mutex_);
 
-// Number of nodes added since last loop closure.
-int num_nodes_since_last_loop_closure_ GUARDED_BY(mutex_) = 0;
+	// Number of nodes added since last loop closure.
+	int num_nodes_since_last_loop_closure_ GUARDED_BY(mutex_) = 0;
 
 	// Whether the optimization has to be run before more data is added.
 	bool run_loop_closure_ GUARDED_BY(mutex_) = false;
@@ -234,17 +253,16 @@ int num_nodes_since_last_loop_closure_ GUARDED_BY(mutex_) = 0;
 	pose_graph::ConstraintBuilder constraint_builder_ GUARDED_BY(mutex_);
 	std::vector<Constraint> constraints_ GUARDED_BY(mutex_);
 
-  // Submaps get assigned an ID and state as soon as they are seen, even
-  // before they take part in the background computations.
-  mapping::MapById<mapping::SubmapId, SubmapData> submap_data_ GUARDED_BY(mutex_);
+	// Submaps get assigned an ID and state as soon as they are seen, even
+	// before they take part in the background computations.
+	// 这里保存了所有的 submap，包括所有的 trajectory 里的 submap
+	mapping::MapById<mapping::SubmapId, SubmapData> submap_data_ GUARDED_BY(mutex_);
+	// Global submap poses currently used for displaying data.
+	mapping::MapById<mapping::SubmapId, pose_graph::SubmapData> global_submap_poses_ GUARDED_BY(mutex_);
 
   // Data that are currently being shown.
   mapping::MapById<mapping::NodeId, mapping::TrajectoryNode> trajectory_nodes_ GUARDED_BY(mutex_);
   int num_trajectory_nodes_ GUARDED_BY(mutex_) = 0;
-
-  // Global submap poses currently used for displaying data.
-  mapping::MapById<mapping::SubmapId, pose_graph::SubmapData>
-      global_submap_poses_ GUARDED_BY(mutex_);
 
 	// List of all trimmers to consult when optimizations finish.
 	// PoseGraphTrimmer 类是一个纯虚类
@@ -256,22 +274,6 @@ int num_nodes_since_last_loop_closure_ GUARDED_BY(mutex_) = 0;
 
 	// Set of all initial trajectory poses.
 	std::map<int, InitialTrajectoryPose> initial_trajectory_poses_ GUARDED_BY(mutex_);
-
-	// Allows querying and manipulating the pose graph by the 'trimmers_'. The
-	// 'mutex_' of the pose graph is held while this class is used.
-	class TrimmingHandle : public mapping::Trimmable 
-	{
-	public:
-		TrimmingHandle(PoseGraph* parent);
-		~TrimmingHandle() override {}
-
-		int num_submaps(int trajectory_id) const override;
-		void MarkSubmapAsTrimmed(const mapping::SubmapId& submap_id)
-			REQUIRES(parent_->mutex_) override;
-
-	private:
-		PoseGraph* const parent_;
-	};
 };
 
 }  // namespace mapping_2d

@@ -28,50 +28,62 @@ namespace mapping {
 ConnectedComponents::ConnectedComponents()
     : lock_(), forest_(), connection_map_() {}
 
-void ConnectedComponents::Add(const int trajectory_id) {
-  common::MutexLocker locker(&lock_);
-  forest_.emplace(trajectory_id, trajectory_id);
+void ConnectedComponents::Add(const int trajectory_id) 
+{
+	common::MutexLocker locker(&lock_);
+	forest_.emplace(trajectory_id, trajectory_id);
 }
 
 void ConnectedComponents::Connect(const int trajectory_id_a,
-                                  const int trajectory_id_b) {
-  common::MutexLocker locker(&lock_);
-  Union(trajectory_id_a, trajectory_id_b);
-  auto sorted_pair = std::minmax(trajectory_id_a, trajectory_id_b);
-  ++connection_map_[sorted_pair];
+                                  const int trajectory_id_b) 
+{
+	common::MutexLocker locker(&lock_);
+	Union(trajectory_id_a, trajectory_id_b);
+	
+	// std::minmax 会返回最小值和最大值组成的 pair 
+	// 两个 trajectory 连接时都是小的前（key），大的在后（value）
+	auto sorted_pair = std::minmax(trajectory_id_a, trajectory_id_b);
+	// connection_map_ 用来统计两个 trajectory_id 连接的次数
+	++connection_map_[sorted_pair];
 }
 
 void ConnectedComponents::Union(const int trajectory_id_a,
-                                const int trajectory_id_b) {
-  forest_.emplace(trajectory_id_a, trajectory_id_a);
-  forest_.emplace(trajectory_id_b, trajectory_id_b);
-  const int representative_a = FindSet(trajectory_id_a);
-  const int representative_b = FindSet(trajectory_id_b);
-  forest_[representative_a] = representative_b;
+                                const int trajectory_id_b) 
+{
+	// 不管怎样都先加入一个针对各自自身的 pair
+	// emplace 会先判断是否需要插入，同一个map里面不会出现两个相同的pair（key->value）
+	forest_.emplace(trajectory_id_a, trajectory_id_a);
+	forest_.emplace(trajectory_id_b, trajectory_id_b);
+	
+	const int representative_a = FindSet(trajectory_id_a);
+	const int representative_b = FindSet(trajectory_id_b);
+	forest_[representative_a] = representative_b;
 }
 
-int ConnectedComponents::FindSet(const int trajectory_id) {
-  auto it = forest_.find(trajectory_id);
-  CHECK(it != forest_.end());
-  if (it->first != it->second) {
-    it->second = FindSet(it->second);
-  }
-  return it->second;
+int ConnectedComponents::FindSet(const int trajectory_id) 
+{
+	// map::find 返回第一个找到的 key == trajectory_id 的 it
+	auto it = forest_.find(trajectory_id);
+	CHECK(it != forest_.end());
+	// 如果找到的第一个元素不是 自己与自己 的 pair，则一直找到那个 自己与自己 的pair
+	if ( it->first != it->second ) 
+	{
+		it->second = FindSet(it->second);
+	}
+	return it->second;
 }
 
 bool ConnectedComponents::TransitivelyConnected(const int trajectory_id_a,
-                                                const int trajectory_id_b) {
-  if (trajectory_id_a == trajectory_id_b) {
-    return true;
-  }
+                                                const int trajectory_id_b) 
+{
+	if (trajectory_id_a == trajectory_id_b)
+		return true;
 
-  common::MutexLocker locker(&lock_);
-
-  if (forest_.count(trajectory_id_a) == 0 ||
-      forest_.count(trajectory_id_b) == 0) {
-    return false;
-  }
-  return FindSet(trajectory_id_a) == FindSet(trajectory_id_b);
+	common::MutexLocker locker(&lock_);
+	if (forest_.count(trajectory_id_a) == 0 || forest_.count(trajectory_id_b) == 0) 
+		return false;
+	
+	return FindSet(trajectory_id_a) == FindSet(trajectory_id_b);
 }
 
 std::vector<std::vector<int>> ConnectedComponents::Components() {
