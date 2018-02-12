@@ -51,6 +51,7 @@ PoseGraph::~PoseGraph() {
   CHECK(work_queue_ == nullptr);
 }
 
+// 将传入的 insertion_submaps 加入到优化问题中，返回对应的 id
 std::vector<mapping::SubmapId> PoseGraph::InitializeGlobalSubmapPoses(
 	const int trajectory_id, 
 	const common::Time time,
@@ -58,7 +59,8 @@ std::vector<mapping::SubmapId> PoseGraph::InitializeGlobalSubmapPoses(
 {
 	CHECK(!insertion_submaps.empty());
 	const auto& submap_data = optimization_problem_.submap_data();
-	// 如果目前只有一个 submap
+	// 如果目前只有一个 submap，则将这唯一的 submap 加入到优化问题中
+	// 并返回这个插入的 submap id （单个元素的 vector）
 	if (insertion_submaps.size() == 1) 
 	{
 		// 首先明确的是，optimization_problem_ 里面所有的 submap data 的位姿全是相对 global 的位姿，而不是local pose
@@ -87,28 +89,36 @@ std::vector<mapping::SubmapId> PoseGraph::InitializeGlobalSubmapPoses(
 		return {submap_id};
 	}
   
+	// 如果不是上面的情况，则 insertion_submap 中一定要有两个 submap
 	CHECK_EQ(2, insertion_submaps.size());
+	// EndOfTrajectory 这个函数其实返回的是下一个 trajectory_id 的第一个元素，而不是当前 trajectory_id 的最后一个
+	// 所以后面需要用到 std::prev(end_it)->id 找到真正对应的 trajectory_id 的最后一个 submap id
 	const auto end_it = submap_data.EndOfTrajectory(trajectory_id);
 	CHECK(submap_data.BeginOfTrajectory(trajectory_id) != end_it);
-	const mapping::SubmapId last_submap_id = std::prev(end_it)->id;
-	if (submap_data_.at(last_submap_id).submap == insertion_submaps.front()) 
+	
+	const mapping::SubmapId last_submap_id_in_this_trajectory 
+		= std::prev(end_it)->id;
+	
+	// 这里仍然只有两种情况
+	// insertion_submaps 中的两个 submap 有可能会全在优化问题中，也有可能只有前面那个在优化问题中
+	if ( submap_data_.at(last_submap_id_in_this_trajectory).submap == insertion_submaps.front() ) 
 	{
-		// In this case, 'last_submap_id' is the ID of 'insertions_submaps.front()'
+		// In this case, 'last_submap_id_in_this_trajectory' is the ID of 'insertions_submaps.front()'
 		// and 'insertions_submaps.back()' is new.
-		const auto& first_submap_pose = submap_data.at(last_submap_id).global_pose;
+		const auto& first_submap_pose = submap_data.at(last_submap_id_in_this_trajectory).global_pose;
 		optimization_problem_.AddSubmap(
 			trajectory_id,
 			first_submap_pose *
 				pose_graph::ComputeSubmapPose(*insertion_submaps[0]).inverse() *
 				pose_graph::ComputeSubmapPose(*insertion_submaps[1]));
-		return {last_submap_id,
-				mapping::SubmapId{trajectory_id, last_submap_id.submap_index + 1}};
+		return {last_submap_id_in_this_trajectory,
+				mapping::SubmapId{trajectory_id, last_submap_id_in_this_trajectory.submap_index + 1}};
 	}
 	
-	CHECK(submap_data_.at(last_submap_id).submap == insertion_submaps.back());
-	const mapping::SubmapId front_submap_id{trajectory_id,last_submap_id.submap_index - 1};
-	CHECK(submap_data_.at(front_submap_id).submap == insertion_submaps.front());
-	return {front_submap_id, last_submap_id};
+	CHECK( submap_data_.at(last_submap_id_in_this_trajectory).submap == insertion_submaps.back() );
+	const mapping::SubmapId front_submap_id{trajectory_id,last_submap_id_in_this_trajectory.submap_index - 1};
+	CHECK( submap_data_.at(front_submap_id).submap == insertion_submaps.front() );
+	return { front_submap_id, last_submap_id_in_this_trajectory };
 }
 
 /*
@@ -152,7 +162,7 @@ mapping::NodeId PoseGraph::AddNode(
 	// 如果在指定的 trajectory 中一个 submap 都没有
 	// 或者指定 trajectory 中有 submap 的情况，但是这个 trajectory 的第一个 submap 不等于 insert 的最后一个
 	// 就需要新建一个 submap data 并指向 insert 的最后一个 sumbap
-	if ( submap_data_.SizeOfTrajectoryOrZero(trajectory_id) == 0 
+	if ( submap_data_.SizeOfTrajectoryOrZero( trajectory_id ) == 0 
 		|| std::prev(submap_data_.EndOfTrajectory(trajectory_id))->data.submap != insertion_submaps.back()) 
 	{
 		// We grow 'submap_data_' as needed. This code assumes that the first
@@ -270,42 +280,50 @@ void PoseGraph::ComputeConstraintsForNode(
 	const auto& constant_data = trajectory_nodes_.at(node_id).constant_data;
 	const std::vector<mapping::SubmapId> submap_ids = InitializeGlobalSubmapPoses(
 		node_id.trajectory_id, constant_data->time, insertion_submaps);
+	
 	CHECK_EQ(submap_ids.size(), insertion_submaps.size());
+	
 	const mapping::SubmapId matching_id = submap_ids.front();
 	const transform::Rigid2d pose = transform::Project2D(
-		constant_data->local_pose *
-		transform::Rigid3d::Rotation(constant_data->gravity_alignment.inverse()));
+		constant_data->local_pose * transform::Rigid3d::Rotation(constant_data->gravity_alignment.inverse()));
 	const transform::Rigid2d optimized_pose =
 		optimization_problem_.submap_data().at(matching_id).global_pose *
-		pose_graph::ComputeSubmapPose(*insertion_submaps.front()).inverse() *
-		pose;
+		pose_graph::ComputeSubmapPose(*insertion_submaps.front()).inverse() * pose;
 	optimization_problem_.AddTrajectoryNode(
 		matching_id.trajectory_id, constant_data->time, pose, optimized_pose,
 		constant_data->gravity_alignment);
-	for (size_t i = 0; i < insertion_submaps.size(); ++i) {
+	
+	// 计算两个 submap （或者 1 个）对应的constraint，添加到 constraints_ 中
+	for (size_t i = 0; i < insertion_submaps.size(); ++i) 
+	{
 		const mapping::SubmapId submap_id = submap_ids[i];
 		// Even if this was the last node added to 'submap_id', the submap will only
 		// be marked as finished in 'submap_data_' further below.
 		CHECK(submap_data_.at(submap_id).state == SubmapState::kActive);
 		submap_data_.at(submap_id).node_ids.emplace(node_id);
-		const transform::Rigid2d constraint_transform =
-			pose_graph::ComputeSubmapPose(*insertion_submaps[i]).inverse() * pose;
-		constraints_.push_back(Constraint{submap_id,
-										node_id,
-										{transform::Embed3D(constraint_transform),
-										options_.matcher_translation_weight(),
-										options_.matcher_rotation_weight()},
-										Constraint::INTRA_SUBMAP});
+		const transform::Rigid2d constraint_transform = pose_graph::ComputeSubmapPose(*insertion_submaps[i]).inverse() * pose;
+		constraints_.push_back(Constraint{	submap_id,
+											node_id,
+											{
+												transform::Embed3D(constraint_transform),
+												options_.matcher_translation_weight(),
+												options_.matcher_rotation_weight()
+												
+											},
+											Constraint::INTRA_SUBMAP
+										});
 	}
 
-	for (const auto& submap_id_data : submap_data_) {
-		if (submap_id_data.data.state == SubmapState::kFinished) {
-		CHECK_EQ(submap_id_data.data.node_ids.count(node_id), 0);
-		ComputeConstraint(node_id, submap_id_data.id);
+	for ( const auto& submap_id_data : submap_data_ ) 
+	{
+		if (submap_id_data.data.state == SubmapState::kFinished) 
+		{
+			CHECK_EQ(submap_id_data.data.node_ids.count(node_id), 0);
+			ComputeConstraint(node_id, submap_id_data.id);
 		}
 	}
 
-	if (newly_finished_submap) {
+	if ( newly_finished_submap ) {
 		const mapping::SubmapId finished_submap_id = submap_ids.front();
 		SubmapData& finished_submap_data = submap_data_.at(finished_submap_id);
 		CHECK(finished_submap_data.state == SubmapState::kActive);
@@ -316,14 +334,16 @@ void PoseGraph::ComputeConstraintsForNode(
 	}
 	constraint_builder_.NotifyEndOfNode();
 	++num_nodes_since_last_loop_closure_;
-	if (options_.optimize_every_n_nodes() > 0 &&
-		num_nodes_since_last_loop_closure_ > options_.optimize_every_n_nodes()) {
+	if ( options_.optimize_every_n_nodes() > 0 &&
+		num_nodes_since_last_loop_closure_ > options_.optimize_every_n_nodes()) 
+	{
 		CHECK(!run_loop_closure_);
 		run_loop_closure_ = true;
 		// If there is a 'work_queue_' already, some other thread will take care.
-		if (work_queue_ == nullptr) {
-		work_queue_ = common::make_unique<std::deque<std::function<void()>>>();
-		HandleWorkQueue();
+		if ( work_queue_ == nullptr ) 
+		{
+			work_queue_ = common::make_unique<std::deque<std::function<void()>>>();
+			HandleWorkQueue();
 		}
 	}
 }
@@ -396,35 +416,37 @@ void PoseGraph::HandleWorkQueue()
 
 // 调用场景
 // 运行最终的优化或者析构是需要等待所有的计算算完！
-void PoseGraph::WaitForAllComputations() {
-  bool notification = false;
-  common::MutexLocker locker(&mutex_);
-  const int num_finished_nodes_at_start =
-      constraint_builder_.GetNumFinishedNodes();
-  while (!locker.AwaitWithTimeout(
-      [this]() REQUIRES(mutex_) {
-        return constraint_builder_.GetNumFinishedNodes() ==
-               num_trajectory_nodes_;
-      },
-      common::FromSeconds(1.))) {
-    std::ostringstream progress_info;
-    progress_info << "Optimizing: " << std::fixed << std::setprecision(1)
-                  << 100. *
-                         (constraint_builder_.GetNumFinishedNodes() -
-                          num_finished_nodes_at_start) /
-                         (num_trajectory_nodes_ - num_finished_nodes_at_start)
-                  << "%...";
-    std::cout << "\r\x1b[K" << progress_info.str() << std::flush;
-  }
-  std::cout << "\r\x1b[KOptimizing: Done.     " << std::endl;
-  constraint_builder_.WhenDone(
-      [this,
-       &notification](const pose_graph::ConstraintBuilder::Result& result) {
-        common::MutexLocker locker(&mutex_);
-        constraints_.insert(constraints_.end(), result.begin(), result.end());
-        notification = true;
-      });
-  locker.Await([&notification]() { return notification; });
+void PoseGraph::WaitForAllComputations() 
+{
+	bool notification = false;
+	common::MutexLocker locker(&mutex_);
+	const int num_finished_nodes_at_start = constraint_builder_.GetNumFinishedNodes();
+	while (!locker.AwaitWithTimeout(
+		[this]() REQUIRES(mutex_) 
+		{
+			return constraint_builder_.GetNumFinishedNodes() == num_trajectory_nodes_;
+		},
+		common::FromSeconds(1.))) 
+	{
+		std::ostringstream progress_info;
+		progress_info << "Optimizing: " << std::fixed << std::setprecision(1)
+					<< 100. *
+							(constraint_builder_.GetNumFinishedNodes() -
+							num_finished_nodes_at_start) /
+							(num_trajectory_nodes_ - num_finished_nodes_at_start)
+					<< "%...";
+		std::cout << "\r\x1b[K" << progress_info.str() << std::flush;
+	}
+	std::cout << "\r\x1b[KOptimizing: Done.     " << std::endl;
+	constraint_builder_.WhenDone(
+		[this, &notification](const pose_graph::ConstraintBuilder::Result& result) 
+		{
+			common::MutexLocker locker(&mutex_);
+			constraints_.insert(constraints_.end(), result.begin(), result.end());
+			notification = true;
+		});
+	
+	locker.Await([&notification]() { return notification; });
 }
 
 void PoseGraph::FinishTrajectory(const int trajectory_id) {
