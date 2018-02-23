@@ -51,8 +51,11 @@ TEST(SubmapsTest, TheRightNumberOfRangeDataAreInserted) {
     submaps.InsertRangeData({Eigen::Vector3f::Zero(), {}, {}});
     // Except for the first, maps should only be returned after enough range
     // data.
-    for (const auto& submap : submaps.submaps()) {
-      all_submaps.insert(submap);
+    for (const auto& submap : submaps.submaps()) 
+	{
+		// 所有的 finished 的 submap 都被剔除了，所以 finished 都是 false
+		EXPECT_FALSE(submap->finished());
+		all_submaps.insert(submap);
     }
     if (submaps.matching_index() != 0) {
       EXPECT_LE(kNumRangeData, submaps.submaps().front()->num_range_data());

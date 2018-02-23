@@ -210,34 +210,36 @@ LocalTrajectoryBuilder::InsertIntoSubmap(
     const transform::Rigid3d& pose_estimate,
     const Eigen::Quaterniond& gravity_alignment) 
 {
-	if (motion_filter_.IsSimilar(time, pose_estimate)) {
+	if ( motion_filter_.IsSimilar(time, pose_estimate) )
 		return nullptr;
+
+	// Querying the active submaps must be done here before calling
+	// InsertRangeData() since the queried values are valid for next insertion.
+	// 这里 insertion_submaps 其实是插入 range data 之前的两个 submap 的指针
+	// 在插入 range data 之后，如果 front() 那个 submap finished，就不会再存在于 active_submaps_ 里了
+	// 但是还是会在这个周期里面存在于 insertion_submaps 里
+	std::vector<std::shared_ptr<const Submap>> insertion_submaps;
+	for (const std::shared_ptr<Submap>& submap : active_submaps_.submaps()) 
+	{
+		insertion_submaps.push_back(submap);
 	}
+	active_submaps_.InsertRangeData(range_data_in_local);
 
-  // Querying the active submaps must be done here before calling
-  // InsertRangeData() since the queried values are valid for next insertion.
-  std::vector<std::shared_ptr<const Submap>> insertion_submaps;
-  for (const std::shared_ptr<Submap>& submap : active_submaps_.submaps()) {
-    insertion_submaps.push_back(submap);
-  }
-  active_submaps_.InsertRangeData(range_data_in_local);
+	sensor::AdaptiveVoxelFilter adaptive_voxel_filter(options_.loop_closure_adaptive_voxel_filter_options());
+	const sensor::PointCloud filtered_gravity_aligned_point_cloud =
+		adaptive_voxel_filter.Filter(gravity_aligned_range_data.returns);
 
-  sensor::AdaptiveVoxelFilter adaptive_voxel_filter(
-      options_.loop_closure_adaptive_voxel_filter_options());
-  const sensor::PointCloud filtered_gravity_aligned_point_cloud =
-      adaptive_voxel_filter.Filter(gravity_aligned_range_data.returns);
-
-  return common::make_unique<InsertionResult>(InsertionResult{
-      std::make_shared<const mapping::TrajectoryNode::Data>(
-          mapping::TrajectoryNode::Data{
-              time,
-              gravity_alignment,
-              filtered_gravity_aligned_point_cloud,
-              {},  // 'high_resolution_point_cloud' is only used in 3D.
-              {},  // 'low_resolution_point_cloud' is only used in 3D.
-              {},  // 'rotational_scan_matcher_histogram' is only used in 3D.
-              pose_estimate}),
-      std::move(insertion_submaps)});
+	return common::make_unique<InsertionResult>(InsertionResult{
+		std::make_shared<const mapping::TrajectoryNode::Data>(
+			mapping::TrajectoryNode::Data{
+				time,
+				gravity_alignment,
+				filtered_gravity_aligned_point_cloud,
+				{},  // 'high_resolution_point_cloud' is only used in 3D.
+				{},  // 'low_resolution_point_cloud' is only used in 3D.
+				{},  // 'rotational_scan_matcher_histogram' is only used in 3D.
+				pose_estimate}),
+		std::move(insertion_submaps)});
 }
 
 void LocalTrajectoryBuilder::AddImuData(const sensor::ImuData& imu_data) {

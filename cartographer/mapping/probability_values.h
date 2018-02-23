@@ -47,15 +47,14 @@ constexpr uint16 kUnknownProbabilityValue = 0;
 constexpr uint16 kUpdateMarker = 1u << 15;
 
 // Converts a probability to a uint16 in the [1, 32767] range.
-inline uint16 ProbabilityToValue(const float probability) {
-  const int value =
-      common::RoundToInt((ClampProbability(probability) - kMinProbability) *
-                         (32766.f / (kMaxProbability - kMinProbability))) +
-      1;
-  // DCHECK for performance.
-  DCHECK_GE(value, 1);
-  DCHECK_LE(value, 32767);
-  return value;
+inline uint16 ProbabilityToValue(const float probability) 
+{
+	const int value = common::RoundToInt(
+		(ClampProbability(probability) - kMinProbability) * (32766.f / (kMaxProbability - kMinProbability)) ) + 1;
+	// DCHECK for performance.
+	DCHECK_GE(value, 1);
+	DCHECK_LE(value, 32767);
+	return value;
 }
 
 extern const std::vector<float>* const kValueToProbability;

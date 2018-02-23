@@ -30,23 +30,22 @@
 namespace cartographer {
 namespace mapping_2d {
 
-ProbabilityGrid ComputeCroppedProbabilityGrid(
-    const ProbabilityGrid& probability_grid) {
-  Eigen::Array2i offset;
-  CellLimits limits;
-  probability_grid.ComputeCroppedLimits(&offset, &limits);
-  const double resolution = probability_grid.limits().resolution();
-  const Eigen::Vector2d max =
-      probability_grid.limits().max() -
-      resolution * Eigen::Vector2d(offset.y(), offset.x());
-  ProbabilityGrid cropped_grid(MapLimits(resolution, max, limits));
-  for (const Eigen::Array2i& xy_index : XYIndexRangeIterator(limits)) {
-    if (probability_grid.IsKnown(xy_index + offset)) {
-      cropped_grid.SetProbability(
-          xy_index, probability_grid.GetProbability(xy_index + offset));
-    }
-  }
-  return cropped_grid;
+ProbabilityGrid ComputeCroppedProbabilityGrid(const ProbabilityGrid& probability_grid) 
+{
+	Eigen::Array2i offset;
+	CellLimits limits;
+	probability_grid.ComputeCroppedLimits(&offset, &limits);
+	
+	const double resolution = probability_grid.limits().resolution();
+	const Eigen::Vector2d max = probability_grid.limits().max() - resolution * Eigen::Vector2d(offset.y(), offset.x());
+	ProbabilityGrid cropped_grid(MapLimits(resolution, max, limits));
+	for ( const Eigen::Array2i& xy_index : XYIndexRangeIterator(limits) ) 
+	{
+		if (probability_grid.IsKnown(xy_index + offset))
+			cropped_grid.SetProbability(xy_index, probability_grid.GetProbability(xy_index + offset));
+	}
+	
+	return cropped_grid;
 }
 
 proto::SubmapsOptions CreateSubmapsOptions(
@@ -132,10 +131,11 @@ void Submap::ToResponseProto(
 }
 
 void Submap::InsertRangeData(const sensor::RangeData& range_data,
-                             const RangeDataInserter& range_data_inserter) {
-  CHECK(!finished_);
-  range_data_inserter.Insert(range_data, &probability_grid_);
-  SetNumRangeData(num_range_data() + 1);
+                             const RangeDataInserter& range_data_inserter) 
+{
+	CHECK(!finished_);
+	range_data_inserter.Insert(range_data, &probability_grid_);
+	SetNumRangeData(num_range_data() + 1);
 }
 
 void Submap::Finish() {
@@ -160,23 +160,16 @@ void ActiveSubmaps::InsertRangeData(const sensor::RangeData& range_data)
 	// 当最新的这个 submap 的数据已经全部添加完毕（也就是num_range_data超过配置的值），就会添加新的submap
 	// 这时传入的新的rangedata就会插入到vector中的两个 submap 中（这个 vector 中的 submap 数量最多为 2 个）
 	// TODO(edward) 为什么要插入到前后两个submap中？？
-	// 所以每个 submap 中其实插入了 2 × num_range_data 个 range data，这个可否做优化
+	// 所以每个 submap 中其实插入了 2 × num_range_data 个 range data，这个在 test 里也可以看到
+	// 这个可否做优化，优化成如下的只插入到当前这个 submap 中，也就是 submaps_.back() 里
+	// 	submaps_.back()->InsertRangeData( range_data, range_data_inserter_ );
+	
 	for ( auto& submap : submaps_ ) 
-	{
 		submap->InsertRangeData( range_data, range_data_inserter_ );
-	}
 	
 	if ( submaps_.back()->num_range_data() == options_.num_range_data() ) 
-	{
 		AddSubmap(range_data.origin.head<2>());
-	}
 }
-
-std::vector<std::shared_ptr<Submap>> ActiveSubmaps::submaps() const {
-  return submaps_;
-}
-
-int ActiveSubmaps::matching_index() const { return matching_submap_index_; }
 
 void ActiveSubmaps::FinishSubmap() 
 {

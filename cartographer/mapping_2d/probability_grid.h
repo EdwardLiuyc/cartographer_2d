@@ -61,8 +61,8 @@ public:
     }
   }
 
-  // Returns the limits of this ProbabilityGrid.
-  const MapLimits& limits() const { return limits_; }
+	// Returns the limits of this ProbabilityGrid.
+	const MapLimits& limits() const { return limits_; }
 
 	// Finishes the update sequence.
 	void FinishUpdate() 

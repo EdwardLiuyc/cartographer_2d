@@ -84,14 +84,20 @@ public:
 	ActiveSubmaps(const ActiveSubmaps&) = delete;
 	ActiveSubmaps& operator=(const ActiveSubmaps&) = delete;
 
-  // Returns the index of the newest initialized Submap which can be
-  // used for scan-to-map matching.
-  int matching_index() const;
+	// Returns the index of the newest initialized Submap which can be
+	// used for scan-to-map matching.
+	inline int matching_index() const
+	{
+		return matching_submap_index_;
+	}
 
   // Inserts 'range_data' into the Submap collection.
   void InsertRangeData(const sensor::RangeData& range_data);
 
-	std::vector<std::shared_ptr<Submap>> submaps() const;
+	inline std::vector<std::shared_ptr<Submap>> submaps() const
+	{
+		return submaps_;
+	}
 
 private:
 	void FinishSubmap();

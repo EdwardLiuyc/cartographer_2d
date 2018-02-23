@@ -176,7 +176,7 @@ mapping::NodeId PoseGraph::AddNode(
 	const bool newly_finished_submap = insertion_submaps.front()->finished();
 	AddWorkItem([=]() REQUIRES(mutex_) 
 		{
-			ComputeConstraintsForNode( node_id, insertion_submaps, newly_finished_submap);
+			ComputeConstraintsForNode( node_id, insertion_submaps, newly_finished_submap );
 		});
 	return node_id;
 }
@@ -251,6 +251,11 @@ void PoseGraph::ComputeConstraint(const mapping::NodeId& node_id,
 	} 
 	else if ( global_localization_samplers_[node_id.trajectory_id]->Pulse() ) 
 	{
+		// 目前的参数设定是 
+		// global_sampling_ratio = 0.003
+		// global_constraint_search_after_n_seconds = 10
+		// 从这两个参数设定看到这个分支一般不会进来（10/0.003）s才会进来一次
+		LOG(INFO) << "************* Now doing global constraint build! **************";
 		constraint_builder_.MaybeAddGlobalConstraint(
 										submap_id, 
 										submap_data_.at(submap_id).submap.get(), 
@@ -286,12 +291,19 @@ void PoseGraph::ComputeConstraintsForNode(
 	const mapping::SubmapId matching_id = submap_ids.front();
 	const transform::Rigid2d pose = transform::Project2D(
 		constant_data->local_pose * transform::Rigid3d::Rotation(constant_data->gravity_alignment.inverse()));
+	
+	// global_pose * submap_pose * local_pose(local_pose * gravity_alignment)
+	// 得到的是这个 node 的 global pose
 	const transform::Rigid2d optimized_pose =
 		optimization_problem_.submap_data().at(matching_id).global_pose *
 		pose_graph::ComputeSubmapPose(*insertion_submaps.front()).inverse() * pose;
-	optimization_problem_.AddTrajectoryNode(
-		matching_id.trajectory_id, constant_data->time, pose, optimized_pose,
-		constant_data->gravity_alignment);
+	
+	// 将计算出的 global pose 加入到优化问题中
+	optimization_problem_.AddTrajectoryNode(matching_id.trajectory_id, 
+											constant_data->time, 
+											pose, 
+											optimized_pose,
+											constant_data->gravity_alignment);
 	
 	// 计算两个 submap （或者 1 个）对应的constraint，添加到 constraints_ 中
 	for (size_t i = 0; i < insertion_submaps.size(); ++i) 
@@ -301,7 +313,8 @@ void PoseGraph::ComputeConstraintsForNode(
 		// be marked as finished in 'submap_data_' further below.
 		CHECK(submap_data_.at(submap_id).state == SubmapState::kActive);
 		submap_data_.at(submap_id).node_ids.emplace(node_id);
-		const transform::Rigid2d constraint_transform = pose_graph::ComputeSubmapPose(*insertion_submaps[i]).inverse() * pose;
+		const transform::Rigid2d constraint_transform = 
+			pose_graph::ComputeSubmapPose(*insertion_submaps[i]).inverse() * pose;
 		constraints_.push_back(Constraint{	submap_id,
 											node_id,
 											{
@@ -323,16 +336,24 @@ void PoseGraph::ComputeConstraintsForNode(
 		}
 	}
 
-	if ( newly_finished_submap ) {
+	if ( newly_finished_submap ) 
+	{
 		const mapping::SubmapId finished_submap_id = submap_ids.front();
 		SubmapData& finished_submap_data = submap_data_.at(finished_submap_id);
+		
+		// 在 submap 类里面，有一个标志状态的变量 finished_
+		// 对应这里的 submap_data 中的 state （kFinished）
 		CHECK(finished_submap_data.state == SubmapState::kActive);
 		finished_submap_data.state = SubmapState::kFinished;
 		// We have a new completed submap, so we look into adding constraints for
 		// old nodes.
 		ComputeConstraintsForOldNodes(finished_submap_id);
 	}
+	
+	// 通知 constraint_builder_, 针对这个node的计算已经结束了
+	// 后面的计算是全局优化的部分，与 constraint_builder_ 无关
 	constraint_builder_.NotifyEndOfNode();
+	
 	++num_nodes_since_last_loop_closure_;
 	if ( options_.optimize_every_n_nodes() > 0 &&
 		num_nodes_since_last_loop_closure_ > options_.optimize_every_n_nodes()) 
@@ -570,15 +591,13 @@ void PoseGraph::AddTrimmer(std::unique_ptr<mapping::PoseGraphTrimmer> trimmer)
 		[this, trimmer_ptr]() REQUIRES(mutex_) { trimmers_.emplace_back(trimmer_ptr); });
 }
 
-void PoseGraph::RunFinalOptimization() {
-  WaitForAllComputations();
-  optimization_problem_.SetMaxNumIterations(
-      options_.max_num_final_iterations());
-  RunOptimization();
-  optimization_problem_.SetMaxNumIterations(
-      options_.optimization_problem_options()
-          .ceres_solver_options()
-          .max_num_iterations());
+// 最后的优化，将整个任务队列中的所有排队的计算任务都执行完
+void PoseGraph::RunFinalOptimization() 
+{
+	WaitForAllComputations();
+	optimization_problem_.SetMaxNumIterations(options_.max_num_final_iterations());
+	RunOptimization();
+	optimization_problem_.SetMaxNumIterations(options_.optimization_problem_options().ceres_solver_options().max_num_iterations());
 }
 
 void PoseGraph::RunOptimization() {

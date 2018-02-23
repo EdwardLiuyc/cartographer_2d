@@ -27,123 +27,144 @@ constexpr int kSubpixelScale = 1000;
 // We divide each pixel in kSubpixelScale x kSubpixelScale subpixels. 'begin'
 // and 'end' are coordinates at subpixel precision. We compute all pixels in
 // which some part of the line segment connecting 'begin' and 'end' lies.
-void CastRay(const Eigen::Array2i& begin, const Eigen::Array2i& end,
+void CastRay(const Eigen::Array2i& begin, 
+			 const Eigen::Array2i& end,
              const std::vector<uint16>& miss_table,
-             ProbabilityGrid* const probability_grid) {
-  // For simplicity, we order 'begin' and 'end' by their x coordinate.
-  if (begin.x() > end.x()) {
-    CastRay(end, begin, miss_table, probability_grid);
-    return;
-  }
+             ProbabilityGrid* const probability_grid) 
+{
+	// For simplicity, we order 'begin' and 'end' by their x coordinate.
+	if (begin.x() > end.x()) 
+	{
+		CastRay(end, begin, miss_table, probability_grid);
+		return;
+	}
 
-  CHECK_GE(begin.x(), 0);
-  CHECK_GE(begin.y(), 0);
-  CHECK_GE(end.y(), 0);
+	CHECK_GE(begin.x(), 0);
+	CHECK_GE(begin.y(), 0);
+	CHECK_GE(end.y(), 0);
 
-  // Special case: We have to draw a vertical line in full pixels, as 'begin'
-  // and 'end' have the same full pixel x coordinate.
-  if (begin.x() / kSubpixelScale == end.x() / kSubpixelScale) {
-    Eigen::Array2i current(begin.x() / kSubpixelScale,
-                           std::min(begin.y(), end.y()) / kSubpixelScale);
-    const int end_y = std::max(begin.y(), end.y()) / kSubpixelScale;
-    for (; current.y() <= end_y; ++current.y()) {
-      probability_grid->ApplyLookupTable(current, miss_table);
-    }
-    return;
-  }
+	// Special case: We have to draw a vertical line in full pixels, as 'begin'
+	// and 'end' have the same full pixel x coordinate.
+	// 这是一个很特殊的情况，就是当起点和终点的 x 坐标一致时，不用做多余的运算
+	// 而是直接讲中间的所有点的值都设为 miss 即可
+	// 这是 bresenham's line algorithm 的一个特殊情况，下面的实现可以参考 bresenham's line algorithm 的原理
+	// bresenham's line algorithm 是目前最快的 line drawing 算法
+	// 因为它把所有的运算都转化成了整型运算
+	if (begin.x() / kSubpixelScale == end.x() / kSubpixelScale) 
+	{
+		Eigen::Array2i current(begin.x() / kSubpixelScale, 
+							   std::min(begin.y(), end.y()) / kSubpixelScale);
+		const int end_y = std::max(begin.y(), end.y()) / kSubpixelScale;
+		for (; current.y() <= end_y; ++current.y()) 
+		{
+			probability_grid->ApplyLookupTable(current, miss_table);
+		}
+		return;
+	}
 
-  const int64 dx = end.x() - begin.x();
-  const int64 dy = end.y() - begin.y();
-  const int64 denominator = 2 * kSubpixelScale * dx;
+	const int64 dx = end.x() - begin.x();
+	const int64 dy = end.y() - begin.y();
+	const int64 denominator = 2 * kSubpixelScale * dx;
 
-  // The current full pixel coordinates. We begin at 'begin'.
-  Eigen::Array2i current = begin / kSubpixelScale;
+	// The current full pixel coordinates. We begin at 'begin'.
+	Eigen::Array2i current = begin / kSubpixelScale;
 
-  // To represent subpixel centers, we use a factor of 2 * 'kSubpixelScale' in
-  // the denominator.
-  // +-+-+-+ -- 1 = (2 * kSubpixelScale) / (2 * kSubpixelScale)
-  // | | | |
-  // +-+-+-+
-  // | | | |
-  // +-+-+-+ -- top edge of first subpixel = 2 / (2 * kSubpixelScale)
-  // | | | | -- center of first subpixel = 1 / (2 * kSubpixelScale)
-  // +-+-+-+ -- 0 = 0 / (2 * kSubpixelScale)
+	// To represent subpixel centers, we use a factor of 2 * 'kSubpixelScale' in
+	// the denominator.
+	// +-+-+-+ -- 1 = (2 * kSubpixelScale) / (2 * kSubpixelScale)
+	// | | | |
+	// +-+-+-+
+	// | | | |
+	// +-+-+-+ -- top edge of first subpixel = 2 / (2 * kSubpixelScale)
+	// | | | | -- center of first subpixel = 1 / (2 * kSubpixelScale)
+	// +-+-+-+ -- 0 = 0 / (2 * kSubpixelScale)
 
-  // The center of the subpixel part of 'begin.y()' assuming the
-  // 'denominator', i.e., sub_y / denominator is in (0, 1).
-  int64 sub_y = (2 * (begin.y() % kSubpixelScale) + 1) * dx;
+	// The center of the subpixel part of 'begin.y()' assuming the
+	// 'denominator', i.e., sub_y / denominator is in (0, 1).
+	int64 sub_y = (2 * (begin.y() % kSubpixelScale) + 1) * dx;
 
-  // The distance from the from 'begin' to the right pixel border, to be divided
-  // by 2 * 'kSubpixelScale'.
-  const int first_pixel =
-      2 * kSubpixelScale - 2 * (begin.x() % kSubpixelScale) - 1;
-  // The same from the left pixel border to 'end'.
-  const int last_pixel = 2 * (end.x() % kSubpixelScale) + 1;
+	// The distance from the from 'begin' to the right pixel border, to be divided
+	// by 2 * 'kSubpixelScale'.
+	const int first_pixel =  2 * kSubpixelScale - 2 * (begin.x() % kSubpixelScale) - 1;
+	// The same from the left pixel border to 'end'.
+	const int last_pixel = 2 * (end.x() % kSubpixelScale) + 1;
 
-  // The full pixel x coordinate of 'end'.
-  const int end_x = std::max(begin.x(), end.x()) / kSubpixelScale;
+	// The full pixel x coordinate of 'end'.
+	const int end_x = std::max(begin.x(), end.x()) / kSubpixelScale;
 
-  // Move from 'begin' to the next pixel border to the right.
-  sub_y += dy * first_pixel;
-  if (dy > 0) {
-    while (true) {
-      probability_grid->ApplyLookupTable(current, miss_table);
-      while (sub_y > denominator) {
-        sub_y -= denominator;
-        ++current.y();
-        probability_grid->ApplyLookupTable(current, miss_table);
-      }
-      ++current.x();
-      if (sub_y == denominator) {
-        sub_y -= denominator;
-        ++current.y();
-      }
-      if (current.x() == end_x) {
-        break;
-      }
-      // Move from one pixel border to the next.
-      sub_y += dy * 2 * kSubpixelScale;
-    }
-    // Move from the pixel border on the right to 'end'.
-    sub_y += dy * last_pixel;
-    probability_grid->ApplyLookupTable(current, miss_table);
-    while (sub_y > denominator) {
-      sub_y -= denominator;
-      ++current.y();
-      probability_grid->ApplyLookupTable(current, miss_table);
-    }
-    CHECK_NE(sub_y, denominator);
-    CHECK_EQ(current.y(), end.y() / kSubpixelScale);
-    return;
-  }
+	// Move from 'begin' to the next pixel border to the right.
+	sub_y += dy * first_pixel;
+	if (dy > 0) 
+	{
+		while (true) 
+		{
+			probability_grid->ApplyLookupTable(current, miss_table);
+			while (sub_y > denominator) 
+			{
+				sub_y -= denominator;
+				++current.y();
+				probability_grid->ApplyLookupTable(current, miss_table);
+			}
+			++current.x();
+			if (sub_y == denominator) 
+			{
+				sub_y -= denominator;
+				++current.y();
+			}
+			if (current.x() == end_x) 
+			{
+				break;
+			}
+			// Move from one pixel border to the next.
+			sub_y += dy * 2 * kSubpixelScale;
+		}
+		// Move from the pixel border on the right to 'end'.
+		sub_y += dy * last_pixel;
+		probability_grid->ApplyLookupTable(current, miss_table);
+		while (sub_y > denominator) 
+		{
+			sub_y -= denominator;
+			++current.y();
+			probability_grid->ApplyLookupTable(current, miss_table);
+		}
+		
+		CHECK_NE(sub_y, denominator);
+		CHECK_EQ(current.y(), end.y() / kSubpixelScale);
+		return;
+	}
 
-  // Same for lines non-ascending in y coordinates.
-  while (true) {
-    probability_grid->ApplyLookupTable(current, miss_table);
-    while (sub_y < 0) {
-      sub_y += denominator;
-      --current.y();
-      probability_grid->ApplyLookupTable(current, miss_table);
-    }
-    ++current.x();
-    if (sub_y == 0) {
-      sub_y += denominator;
-      --current.y();
-    }
-    if (current.x() == end_x) {
-      break;
-    }
-    sub_y += dy * 2 * kSubpixelScale;
-  }
-  sub_y += dy * last_pixel;
-  probability_grid->ApplyLookupTable(current, miss_table);
-  while (sub_y < 0) {
-    sub_y += denominator;
-    --current.y();
-    probability_grid->ApplyLookupTable(current, miss_table);
-  }
-  CHECK_NE(sub_y, 0);
-  CHECK_EQ(current.y(), end.y() / kSubpixelScale);
+	// Same for lines non-ascending in y coordinates.
+	while (true) 
+	{
+		probability_grid->ApplyLookupTable(current, miss_table);
+		while (sub_y < 0) 
+		{
+			sub_y += denominator;
+			--current.y();
+			probability_grid->ApplyLookupTable(current, miss_table);
+		}
+		++current.x();
+		if (sub_y == 0) 
+		{
+			sub_y += denominator;
+			--current.y();
+		}
+		if (current.x() == end_x) 
+		{
+			break;
+		}
+		sub_y += dy * 2 * kSubpixelScale;
+	}
+	sub_y += dy * last_pixel;
+	probability_grid->ApplyLookupTable(current, miss_table);
+	while (sub_y < 0) 
+	{
+		sub_y += denominator;
+		--current.y();
+		probability_grid->ApplyLookupTable(current, miss_table);
+	}
+	CHECK_NE(sub_y, 0);
+	CHECK_EQ(current.y(), end.y() / kSubpixelScale);
 }
 
 // 先用 range data 的范围大小对已有的 probability_grid 的大小进行拓展( if needed )

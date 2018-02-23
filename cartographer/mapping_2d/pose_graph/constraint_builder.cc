@@ -296,6 +296,7 @@ void ConstraintBuilder::FinishComputation(const int computation_index)
 {
 	Result result;
 	std::unique_ptr<std::function<void(const Result&)>> callback;
+	
 	{
 		common::MutexLocker locker(&mutex_);
 		if (--pending_computations_[computation_index] == 0) 

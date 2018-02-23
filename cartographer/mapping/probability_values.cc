@@ -22,15 +22,15 @@ namespace mapping {
 namespace {
 
 // 0 is unknown, [1, 32767] maps to [kMinProbability, kMaxProbability].
-float SlowValueToProbability(const uint16 value) {
-  CHECK_GE(value, 0);
-  CHECK_LE(value, 32767);
-  if (value == kUnknownProbabilityValue) {
-    // Unknown cells have kMinProbability.
-    return kMinProbability;
-  }
-  const float kScale = (kMaxProbability - kMinProbability) / 32766.f;
-  return value * kScale + (kMinProbability - kScale);
+// int value 装换成 float 概率
+float SlowValueToProbability(const uint16 value) 
+{
+	CHECK_GE(value, 0);
+	CHECK_LE(value, 32767);
+	if (value == kUnknownProbabilityValue)	// Unknown cells have kMinProbability.
+		return kMinProbability;
+	const float kScale = (kMaxProbability - kMinProbability) / 32766.f;
+	return value * kScale + (kMinProbability - kScale);
 }
 
 const std::vector<float>* PrecomputeValueToProbability() {
@@ -47,19 +47,19 @@ const std::vector<float>* PrecomputeValueToProbability() {
 
 }  // namespace
 
-const std::vector<float>* const kValueToProbability =
-    PrecomputeValueToProbability();
+const std::vector<float>* const kValueToProbability = PrecomputeValueToProbability();
 
-std::vector<uint16> ComputeLookupTableToApplyOdds(const float odds) {
-  std::vector<uint16> result;
-  result.push_back(ProbabilityToValue(ProbabilityFromOdds(odds)) +
-                   kUpdateMarker);
-  for (int cell = 1; cell != 32768; ++cell) {
-    result.push_back(ProbabilityToValue(ProbabilityFromOdds(
-                         odds * Odds((*kValueToProbability)[cell]))) +
-                     kUpdateMarker);
-  }
-  return result;
+std::vector<uint16> ComputeLookupTableToApplyOdds(const float odds) 
+{
+	std::vector<uint16> result;
+	result.push_back(ProbabilityToValue(ProbabilityFromOdds(odds)) + kUpdateMarker);
+	
+	for (int cell = 1; cell != 32768; ++cell) 
+	{
+		result.push_back(
+			ProbabilityToValue( ProbabilityFromOdds( odds * Odds((*kValueToProbability)[cell]) ) ) + kUpdateMarker);
+	}
+	return result;
 }
 
 }  // namespace mapping
