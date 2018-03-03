@@ -40,11 +40,31 @@ public:
 	// threshold, returns false. Otherwise the relative motion is accumulated and
 	// true is returned.
 	bool IsSimilar(common::Time time, const transform::Rigid3d& pose);
+	
+	/*
+		给的数据的坡度过大的情况我们也要考虑在 filter 中
+		这个我们需要首先记录下一个平均的初始坡度
+		再在每次的数据进来时进行比对，如果超过的一定范围则返回 true
+		否则返回 false
+	*/
+	bool IsLargeSlope( common::Time time, const Eigen::Quaterniond& gravity_alignment );
 
 private:
+	/*
+		// Threshold above which range data is inserted based on time.
+		double max_time_seconds = 1;
+		// Threshold above which range data is inserted based on linear motion.
+		double max_distance_meters = 2;
+		// Threshold above which range data is inserted based on rotational motion.
+		double max_angle_radians = 3;
+	 */
 	const proto::MotionFilterOptions options_;
-	int num_total_ = 0;
-	int num_different_ = 0;
+	int32_t num_total_ = 0;
+	int32_t num_different_ = 0;
+	
+	int32_t num_total_for_slope_ = 0;
+	int32_t num_accepted_slope_ = 0;
+	
 	common::Time last_time_;
 	transform::Rigid3d last_pose_;
 };

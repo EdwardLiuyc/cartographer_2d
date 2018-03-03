@@ -210,6 +210,7 @@ LocalTrajectoryBuilder::InsertIntoSubmap(
     const transform::Rigid3d& pose_estimate,
     const Eigen::Quaterniond& gravity_alignment) 
 {
+// 	motion_filter_.IsLargeSlope( time, gravity_alignment );
 	if ( motion_filter_.IsSimilar(time, pose_estimate) )
 		return nullptr;
 

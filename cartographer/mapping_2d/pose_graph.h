@@ -201,6 +201,8 @@ private:
   // Runs the optimization. Callers have to make sure, that there is only one
   // optimization being run at a time.
   void RunOptimization() EXCLUDES(mutex_);
+  
+  void DispatchOptimization() EXCLUDES(mutex_);
 
   // Computes the local to global map frame transform based on the given
   // 'global_submap_poses'.

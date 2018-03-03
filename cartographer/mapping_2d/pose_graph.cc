@@ -28,7 +28,7 @@
 #include <sstream>
 #include <string>
 
-#include "Eigen/Eigenvalues"
+#include "Eigen/Core"
 #include "cartographer/common/make_unique.h"
 #include "cartographer/common/math.h"
 #include "cartographer/mapping/pose_graph/proto/constraint_builder_options.pb.h"
@@ -145,7 +145,7 @@ mapping::NodeId PoseGraph::AddNode(
 			// The node pose in the local SLAM frame.
 			transform::Rigid3d local_pose;
 		};
-	 */
+	*/
 	const transform::Rigid3d optimized_pose(
 		GetLocalToGlobalTransform( trajectory_id ) * constant_data->local_pose);
 
@@ -190,6 +190,9 @@ void PoseGraph::AddWorkItem(const std::function<void()>& work_item)
 		work_queue_->push_back(work_item);
 }
 
+// 在需要的情况下添加 trajectory
+// 比如在 loadmap 之后， trajectory 0 已经被载入的地图占用
+// 这时当前的 trajectory 为 1
 void PoseGraph::AddTrajectoryIfNeeded(const int trajectory_id) 
 {
 	trajectory_connectivity_state_.Add(trajectory_id);
@@ -202,11 +205,13 @@ void PoseGraph::AddTrajectoryIfNeeded(const int trajectory_id)
 }
 
 void PoseGraph::AddImuData(const int trajectory_id,
-                           const sensor::ImuData& imu_data) {
-  common::MutexLocker locker(&mutex_);
-  AddWorkItem([=]() REQUIRES(mutex_) {
-    optimization_problem_.AddImuData(trajectory_id, imu_data);
-  });
+                           const sensor::ImuData& imu_data) 
+{
+	common::MutexLocker locker(&mutex_);
+	AddWorkItem([=]() REQUIRES(mutex_) 
+	{
+		optimization_problem_.AddImuData(trajectory_id, imu_data);
+	});
 }
 
 void PoseGraph::AddOdometryData(const int trajectory_id,
@@ -225,6 +230,9 @@ void PoseGraph::ComputeConstraint(const mapping::NodeId& node_id,
 	const common::Time node_time = GetLatestNodeTime(node_id, submap_id);
 	const common::Time last_connection_time =
 		trajectory_connectivity_state_.LastConnectionTime( node_id.trajectory_id, submap_id.trajectory_id );
+
+// 	LOG(INFO) << "node: " << node_id.trajectory_id << "," << node_id.node_index
+// 		<< " submap" << submap_id.trajectory_id << "," << submap_id.submap_index << " time: " << last_connection_time;
 	
 	/* 
 	 * 两种情况只需要 AddConstraint，而不需要 AddGlobalConstraint
@@ -241,7 +249,7 @@ void PoseGraph::ComputeConstraint(const mapping::NodeId& node_id,
 		const transform::Rigid2d initial_relative_pose =
 			optimization_problem_.submap_data().at(submap_id).global_pose.inverse() *
 			optimization_problem_.node_data().at(node_id).pose;
-			
+		
 		constraint_builder_.MaybeAddConstraint(
 										submap_id, 
 										submap_data_.at(submap_id).submap.get(), 
@@ -251,10 +259,11 @@ void PoseGraph::ComputeConstraint(const mapping::NodeId& node_id,
 	} 
 	else if ( global_localization_samplers_[node_id.trajectory_id]->Pulse() ) 
 	{
-		// 目前的参数设定是 
-		// global_sampling_ratio = 0.003
-		// global_constraint_search_after_n_seconds = 10
-		// 从这两个参数设定看到这个分支一般不会进来（10/0.003）s才会进来一次
+		/*
+			目前的参数设定是 
+			global_sampling_ratio = 0.003
+			global_constraint_search_after_n_seconds = 10
+		*/
 		LOG(INFO) << "************* Now doing global constraint build! **************";
 		constraint_builder_.MaybeAddGlobalConstraint(
 										submap_id, 
@@ -350,7 +359,7 @@ void PoseGraph::ComputeConstraintsForNode(
 		ComputeConstraintsForOldNodes(finished_submap_id);
 	}
 	
-	// 通知 constraint_builder_, 针对这个node的计算已经结束了
+	// 通知 constraint_builder_, 针对这个 node 的计算已经结束了
 	// 后面的计算是全局优化的部分，与 constraint_builder_ 无关
 	constraint_builder_.NotifyEndOfNode();
 	
@@ -359,36 +368,43 @@ void PoseGraph::ComputeConstraintsForNode(
 		num_nodes_since_last_loop_closure_ > options_.optimize_every_n_nodes()) 
 	{
 		CHECK(!run_loop_closure_);
-		run_loop_closure_ = true;
-		// If there is a 'work_queue_' already, some other thread will take care.
-		if ( work_queue_ == nullptr ) 
-		{
-			work_queue_ = common::make_unique<std::deque<std::function<void()>>>();
-			HandleWorkQueue();
-		}
+		DispatchOptimization();
+	}
+}
+
+void PoseGraph::DispatchOptimization()
+{
+	run_loop_closure_ = true;
+	// If there is a 'work_queue_' already, some other thread will take care.
+	if ( work_queue_ == nullptr ) 
+	{
+		work_queue_ = common::make_unique<std::deque<std::function<void()>>>();
+		HandleWorkQueue();
 	}
 }
 
 common::Time PoseGraph::GetLatestNodeTime(
-    const mapping::NodeId& node_id, const mapping::SubmapId& submap_id) const {
-  common::Time time = trajectory_nodes_.at(node_id).constant_data->time;
-  const SubmapData& submap_data = submap_data_.at(submap_id);
-  if (!submap_data.node_ids.empty()) {
-    const mapping::NodeId last_submap_node_id =
-        *submap_data_.at(submap_id).node_ids.rbegin();
-    time = std::max(
-        time, trajectory_nodes_.at(last_submap_node_id).constant_data->time);
-  }
-  return time;
+    const mapping::NodeId& node_id, const mapping::SubmapId& submap_id) const 
+{
+	common::Time time = trajectory_nodes_.at(node_id).constant_data->time;
+	const SubmapData& submap_data = submap_data_.at(submap_id);
+	
+	if (!submap_data.node_ids.empty()) 
+	{
+		const mapping::NodeId last_submap_node_id = *submap_data_.at(submap_id).node_ids.rbegin();
+		time = std::max(time, trajectory_nodes_.at(last_submap_node_id).constant_data->time);
+	}
+	return time;
 }
 
-void PoseGraph::UpdateTrajectoryConnectivity(const Constraint& constraint) {
-  CHECK_EQ(constraint.tag, mapping::PoseGraph::Constraint::INTER_SUBMAP);
-  const common::Time time =
-      GetLatestNodeTime(constraint.node_id, constraint.submap_id);
-  trajectory_connectivity_state_.Connect(constraint.node_id.trajectory_id,
-                                         constraint.submap_id.trajectory_id,
-                                         time);
+void PoseGraph::UpdateTrajectoryConnectivity(const Constraint& constraint) 
+{
+	CHECK_EQ(constraint.tag, mapping::PoseGraph::Constraint::INTER_SUBMAP);
+	const common::Time time = GetLatestNodeTime(constraint.node_id, constraint.submap_id);
+				
+	trajectory_connectivity_state_.Connect(	constraint.node_id.trajectory_id,
+											constraint.submap_id.trajectory_id, 
+											time);
 }
 
 void PoseGraph::HandleWorkQueue() 
@@ -594,6 +610,24 @@ void PoseGraph::AddTrimmer(std::unique_ptr<mapping::PoseGraphTrimmer> trimmer)
 // 最后的优化，将整个任务队列中的所有排队的计算任务都执行完
 void PoseGraph::RunFinalOptimization() 
 {
+	// TODO (edward) 新的版本中的这个函数实现差异比较大，可以尝试跟进效果
+	/*
+	{
+		common::MutexLocker locker(&mutex_);
+		AddWorkItem([this]() REQUIRES(mutex_) 
+			{
+				optimization_problem_.SetMaxNumIterations(options_.max_num_final_iterations());
+				DispatchOptimization();
+			});
+		AddWorkItem([this]() REQUIRES(mutex_) 
+			{
+				optimization_problem_.SetMaxNumIterations(
+					options_.optimization_problem_options().ceres_solver_options().max_num_iterations());
+			});
+	}
+	WaitForAllComputations();
+	*/
+	
 	WaitForAllComputations();
 	optimization_problem_.SetMaxNumIterations(options_.max_num_final_iterations());
 	RunOptimization();

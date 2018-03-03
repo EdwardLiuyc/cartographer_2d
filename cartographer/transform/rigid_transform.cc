@@ -45,6 +45,13 @@ Eigen::Quaterniond RollPitchYaw(const double roll, const double pitch,
   return yaw_angle * pitch_angle * roll_angle;
 }
 
+Rigid3d::Vector QuaterniondToEuler( const Eigen::Quaterniond& quaternion )
+{
+	// 四元数转欧拉角
+	// TODO (edward)
+	return Rigid3d::Vector();
+}
+
 transform::Rigid3d FromDictionary(common::LuaParameterDictionary* dictionary) {
   const Eigen::Vector3d translation =
       TranslationFromDictionary(dictionary->GetDictionary("translation").get());

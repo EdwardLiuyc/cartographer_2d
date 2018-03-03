@@ -28,8 +28,13 @@ namespace mapping {
 // constraint connected to trajectories.
 //
 // This class is thread-compatible.
-// 这个类的功能和 connected_components 很相似
-// 区别在于多了一个时间点 last_connection_time_map_，具体意义还需要看代码（ TODO edward）
+/*
+	这个类的功能和 connected_components 很相似
+	区别在于多了一个时间点 last_connection_time_map_
+	代码实现的流程是：
+	constraint builder 中有一个 finishcomputation，如果这个计算有结果就会更新这个 connection 的时间戳，也就是这个 last connect time
+	这个 map 里保存的是 trajectory 之间的 connect 的时间，包括与自身的connect时间
+*/
 class TrajectoryConnectivityState 
 {
 public:
@@ -38,41 +43,44 @@ public:
 	TrajectoryConnectivityState(const TrajectoryConnectivityState&) = delete;
 	TrajectoryConnectivityState& operator=(const TrajectoryConnectivityState&) = delete;
 
-  // Add a trajectory which is initially connected to only itself.
-  void Add(int trajectory_id);
+	// Add a trajectory which is initially connected to only itself.
+	void Add(int trajectory_id);
 
-  // Connect two trajectories. If either trajectory is untracked, it will be
-  // tracked. This function is invariant to the order of its arguments. Repeated
-  // calls to Connect increment the connectivity count and update the last
-  // connected time.
-  void Connect(int trajectory_id_a, int trajectory_id_b, common::Time time);
+	// Connect two trajectories. If either trajectory is untracked, it will be
+	// tracked. This function is invariant to the order of its arguments. Repeated
+	// calls to Connect increment the connectivity count and update the last
+	// connected time.
+	void Connect(int trajectory_id_a, int trajectory_id_b, common::Time time);
 
-  // Determines if two trajectories have been (transitively) connected. If
-  // either trajectory is not being tracked, returns false, except when it is
-  // the same trajectory, where it returns true. This function is invariant to
-  // the order of its arguments.
-  inline bool TransitivelyConnected(int trajectory_id_a, int trajectory_id_b)
-  {
-	  return connected_components_.TransitivelyConnected(trajectory_id_a,trajectory_id_b);
-  }
+	// Determines if two trajectories have been (transitively) connected. If
+	// either trajectory is not being tracked, returns false, except when it is
+	// the same trajectory, where it returns true. This function is invariant to
+	// the order of its arguments.
+	inline bool TransitivelyConnected(int trajectory_id_a, int trajectory_id_b)
+	{
+		return connected_components_.TransitivelyConnected(trajectory_id_a,trajectory_id_b);
+	}
 
-  // The trajectory IDs, grouped by connectivity.
-  std::vector<std::vector<int>> Components();
+	// The trajectory IDs, grouped by connectivity.
+	inline std::vector<std::vector<int>> Components()
+	{
+		return connected_components_.Components();
+	}
+	
+	// Return the last connection count between the two trajectories. If either of
+	// the trajectories is untracked or they have never been connected returns the
+	// beginning of time.
+	common::Time LastConnectionTime(int trajectory_id_a, int trajectory_id_b);
 
-  // Return the last connection count between the two trajectories. If either of
-  // the trajectories is untracked or they have never been connected returns the
-  // beginning of time.
-  common::Time LastConnectionTime(int trajectory_id_a, int trajectory_id_b);
+private:
+	ConnectedComponents connected_components_;
 
- private:
-  ConnectedComponents connected_components_;
-
-  // Tracks the last time a direct connection between two trajectories has
-  // been added. The exception is when a connection between two trajectories
-  // connects two formerly unconnected connected components. In this case all
-  // bipartite trajectories entries for these components are updated with the
-  // new connection time.
-  std::map<std::pair<int, int>, common::Time> last_connection_time_map_;
+	// Tracks the last time a direct connection between two trajectories has
+	// been added. The exception is when a connection between two trajectories
+	// connects two formerly unconnected connected components. In this case all
+	// bipartite trajectories entries for these components are updated with the
+	// new connection time.
+	std::map<std::pair<int, int>, common::Time> last_connection_time_map_;
 };
 
 }  // namespace mapping

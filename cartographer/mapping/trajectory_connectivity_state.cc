@@ -67,9 +67,9 @@ void TrajectoryConnectivityState::Connect(const int trajectory_id_a,
 //                                                      trajectory_id_b);
 // }
 
-std::vector<std::vector<int>> TrajectoryConnectivityState::Components() {
-  return connected_components_.Components();
-}
+// std::vector<std::vector<int>> TrajectoryConnectivityState::Components() {
+//   return connected_components_.Components();
+// }
 
 common::Time TrajectoryConnectivityState::LastConnectionTime(
     const int trajectory_id_a, const int trajectory_id_b) 
