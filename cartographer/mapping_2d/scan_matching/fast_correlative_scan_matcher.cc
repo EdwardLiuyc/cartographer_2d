@@ -356,10 +356,9 @@ void FastCorrelativeScanMatcher::ScoreCandidates(
     std::vector<Candidate>* const candidates) const 
 {
 	// 这个fast的scan match算法中并没有包含权重的处理
-	int sum = 0;
 	for (Candidate& candidate : *candidates) 
 	{
-		sum = 0;
+		int sum = 0;
 		for (const Eigen::Array2i& xy_index : discrete_scans[candidate.scan_index]) 
 		{
 			const Eigen::Array2i proposed_xy_index(

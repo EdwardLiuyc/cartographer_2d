@@ -157,7 +157,8 @@ void ConstraintBuilder::ScheduleSubmapScanMatcherConstructionAndQueueWorkItem(
 		// 只有在这个队列中有需要处理的 work 时才会创建相应的 scan matcher
 		// 创建 scan matcher 同样是放进执行队列中，由线程池自己分配执行
 		submap_queued_work_items_[submap_id].push_back(work_item);
-		if ( submap_queued_work_items_[submap_id].size() >= 1 ) 	// 这里判断 >= 1 可能更合适，否则多线程执行时可能会出现错误  TODO(edward)
+		// 这里曾经尝试将判断条件改为 >=1 但是会导致程序段错误，不明原因，需调查 TODO(edward)
+		if ( submap_queued_work_items_[submap_id].size() == 1 )
 		{
 			thread_pool_->Schedule([=]() { ConstructSubmapScanMatcher(submap_id, submap); });
 		}

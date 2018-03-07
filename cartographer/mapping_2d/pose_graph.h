@@ -219,11 +219,12 @@ private:
       REQUIRES(mutex_);
 
   // Updates the trajectory connectivity structure with a new constraint.
-  void UpdateTrajectoryConnectivity(const Constraint& constraint)
-      REQUIRES(mutex_);
+  void UpdateTrajectoryConnectivity(const Constraint& constraint) REQUIRES(mutex_);
+	 
+	// add by liu.y.c 2018.03.07
+	// 这里为了检测 global 定位是否有跳变的情况，对应 BUG MEG-8
+	bool GlobalPoseJump( const transform::Rigid3d& old_global_to_new_global );
 
-	  
-	  
 	/********************************* PARAMETERS ***********************************/
 	const mapping::proto::PoseGraphOptions options_;
 	common::Mutex mutex_;
@@ -262,9 +263,9 @@ private:
 	// Global submap poses currently used for displaying data.
 	mapping::MapById<mapping::SubmapId, pose_graph::SubmapData> global_submap_poses_ GUARDED_BY(mutex_);
 
-  // Data that are currently being shown.
-  mapping::MapById<mapping::NodeId, mapping::TrajectoryNode> trajectory_nodes_ GUARDED_BY(mutex_);
-  int num_trajectory_nodes_ GUARDED_BY(mutex_) = 0;
+	// Data that are currently being shown.
+	mapping::MapById<mapping::NodeId, mapping::TrajectoryNode> trajectory_nodes_ GUARDED_BY(mutex_);
+	int num_trajectory_nodes_ GUARDED_BY(mutex_) = 0;
 
 	// List of all trimmers to consult when optimizations finish.
 	// PoseGraphTrimmer 类是一个纯虚类
@@ -276,6 +277,8 @@ private:
 
 	// Set of all initial trajectory poses.
 	std::map<int, InitialTrajectoryPose> initial_trajectory_poses_ GUARDED_BY(mutex_);
+	
+	bool got_first_local_to_global_ = true;
 };
 
 }  // namespace mapping_2d

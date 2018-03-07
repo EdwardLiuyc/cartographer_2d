@@ -47,6 +47,7 @@ proto::MapBuilderOptions CreateMapBuilderOptions(
       parameter_dictionary->GetNonNegativeInt("num_background_threads"));
   *options.mutable_pose_graph_options() = CreatePoseGraphOptions(
       parameter_dictionary->GetDictionary("pose_graph").get());
+  
   CHECK_NE(options.use_trajectory_builder_2d(),
            options.use_trajectory_builder_3d());
   return options;

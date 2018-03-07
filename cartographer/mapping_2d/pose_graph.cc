@@ -264,7 +264,6 @@ void PoseGraph::ComputeConstraint(const mapping::NodeId& node_id,
 			global_sampling_ratio = 0.003
 			global_constraint_search_after_n_seconds = 10
 		*/
-		LOG(INFO) << "************* Now doing global constraint build! **************";
 		constraint_builder_.MaybeAddGlobalConstraint(
 										submap_id, 
 										submap_data_.at(submap_id).submap.get(), 
@@ -491,9 +490,15 @@ void PoseGraph::FinishTrajectory(const int trajectory_id) {
   // trajectory.
 }
 
+/*
+ 这个函数是在 loadmap 时调用的，也仅在此情况下调用
+ 目的是 freeze 载入进来的 trajectory，并在计算时讲 load 进来的 trajectory 作为 global(看 RunOptimization)
+ */
 void PoseGraph::FreezeTrajectory(const int trajectory_id) {
   common::MutexLocker locker(&mutex_);
   trajectory_connectivity_state_.Add(trajectory_id);
+  
+  got_first_local_to_global_ = false;
   AddWorkItem([this, trajectory_id]() REQUIRES(mutex_) {
     CHECK_EQ(frozen_trajectories_.count(trajectory_id), 0);
     frozen_trajectories_.insert(trajectory_id);
@@ -611,6 +616,7 @@ void PoseGraph::AddTrimmer(std::unique_ptr<mapping::PoseGraphTrimmer> trimmer)
 void PoseGraph::RunFinalOptimization() 
 {
 	// TODO (edward) 新的版本中的这个函数实现差异比较大，可以尝试跟进效果
+	// new version -> 目前还有问题，用这个实现在结束时会异常退出
 	/*
 	{
 		common::MutexLocker locker(&mutex_);
@@ -625,59 +631,90 @@ void PoseGraph::RunFinalOptimization()
 					options_.optimization_problem_options().ceres_solver_options().max_num_iterations());
 			});
 	}
-	WaitForAllComputations();
-	*/
+	WaitForAllComputations();*/
 	
+	// old (stable) version
 	WaitForAllComputations();
 	optimization_problem_.SetMaxNumIterations(options_.max_num_final_iterations());
 	RunOptimization();
 	optimization_problem_.SetMaxNumIterations(options_.optimization_problem_options().ceres_solver_options().max_num_iterations());
 }
 
-void PoseGraph::RunOptimization() {
-  if (optimization_problem_.submap_data().empty()) {
-    return;
-  }
+bool PoseGraph::GlobalPoseJump( const transform::Rigid3d& old_global_to_new_global )
+{
+	// 如果 load map，frozen_trajectories_里面会有从map里加载进来的 trajectory
+	// 没有 load map的情况下不需要考虑 global 跳变的问题
+	if( frozen_trajectories_.size() == 0 )
+		return false;
+	
+	// 第一次获取到两个路径间的转化的情况
+	if( !got_first_local_to_global_ && old_global_to_new_global.translation().norm() > 0.05 )
+		got_first_local_to_global_ = true;
+	
+	if( !got_first_local_to_global_ )
+		return false;
+	
+	LOG(INFO) << "old_global_to_new_global : " << old_global_to_new_global;
+	// 这里判断在获得了第一次的位置后，global位置发生了跳变
+	if( old_global_to_new_global.translation().norm() > 0.5 )
+	{
+		return true;
+	}
+	
+	return false;
+}
+
+void PoseGraph::RunOptimization() 
+{
+	if (optimization_problem_.submap_data().empty())
+		return;
 
   // No other thread is accessing the optimization_problem_, constraints_ and
   // frozen_trajectories_ when executing the Solve. Solve is time consuming, so
   // not taking the mutex before Solve to avoid blocking foreground processing.
-  optimization_problem_.Solve(constraints_, frozen_trajectories_);
-  common::MutexLocker locker(&mutex_);
+	// 这里是唯一 solve optimization problem 的地方，也就是说只有在 RunOptimization 的时候是会去解全局的位置并更新的
+	// 所以如果没有后端，永远无法得到基于地图的定位信息
+	optimization_problem_.Solve(constraints_, frozen_trajectories_);
+	common::MutexLocker locker(&mutex_);
 
-  const auto& submap_data = optimization_problem_.submap_data();
-  const auto& node_data = optimization_problem_.node_data();
-  for (const int trajectory_id : node_data.trajectory_ids()) {
-    for (const auto& node : node_data.trajectory(trajectory_id)) {
-      auto& mutable_trajectory_node = trajectory_nodes_.at(node.id);
-      mutable_trajectory_node.global_pose =
-          transform::Embed3D(node.data.pose) *
-          transform::Rigid3d::Rotation(
-              mutable_trajectory_node.constant_data->gravity_alignment);
-    }
+	const auto& submap_data = optimization_problem_.submap_data();
+	const auto& node_data = optimization_problem_.node_data();
+	// 每个 trajectory 上的每个 node 的 global pose 都会获得新的值
+	for (const int trajectory_id : node_data.trajectory_ids()) 
+	{
+		for (const auto& node : node_data.trajectory(trajectory_id)) 
+		{
+			auto& mutable_trajectory_node = trajectory_nodes_.at(node.id);
+			mutable_trajectory_node.global_pose =
+				transform::Embed3D(node.data.pose) *
+				transform::Rigid3d::Rotation(mutable_trajectory_node.constant_data->gravity_alignment);
+		}
 
-    // Extrapolate all point cloud poses that were not included in the
-    // 'optimization_problem_' yet.
-    const auto local_to_new_global =
-        ComputeLocalToGlobalTransform(submap_data, trajectory_id);
-    const auto local_to_old_global =
-        ComputeLocalToGlobalTransform(global_submap_poses_, trajectory_id);
-    const transform::Rigid3d old_global_to_new_global =
-        local_to_new_global * local_to_old_global.inverse();
-
-    const mapping::NodeId last_optimized_node_id =
-        std::prev(node_data.EndOfTrajectory(trajectory_id))->id;
-    auto node_it = std::next(trajectory_nodes_.find(last_optimized_node_id));
-    for (; node_it != trajectory_nodes_.EndOfTrajectory(trajectory_id);
-         ++node_it) {
-      auto& mutable_trajectory_node = trajectory_nodes_.at(node_it->id);
-      mutable_trajectory_node.global_pose =
-          old_global_to_new_global * mutable_trajectory_node.global_pose;
-    }
-  }
+		// Extrapolate all point cloud poses that were not included in the
+		// 'optimization_problem_' yet.
+		const auto local_to_new_global = ComputeLocalToGlobalTransform(submap_data, trajectory_id);
+		const auto local_to_old_global = ComputeLocalToGlobalTransform(global_submap_poses_, trajectory_id);
+		const transform::Rigid3d old_global_to_new_global = local_to_new_global * local_to_old_global.inverse();
+		
+		// 如果发生了跳变，则跳过
+		// 重新计算下一次，不把这次的计算结果放进 global pose 里面
+		if( GlobalPoseJump( old_global_to_new_global ) )
+			continue;
+		
+														// 当前 trajectory id 对应的最后一个元素
+		const mapping::NodeId last_optimized_node_id = std::prev(node_data.EndOfTrajectory(trajectory_id))->id;
+		auto node_it = std::next(trajectory_nodes_.find(last_optimized_node_id));
+		for (; node_it != trajectory_nodes_.EndOfTrajectory(trajectory_id);
+			++node_it) 
+		{
+			// last_optimized_node_id 之前的（包括）的所有 node 的 global pose 全部更新 
+			auto& mutable_trajectory_node = trajectory_nodes_.at(node_it->id);
+			mutable_trajectory_node.global_pose = old_global_to_new_global * mutable_trajectory_node.global_pose;
+		}
+	}
   
-  // RunOptimization 其实就是一个将 local 和 global 的关系更新的过程
-  global_submap_poses_ = submap_data;
+	// RunOptimization 其实就是一个将 local 和 global 的关系更新的过程
+	global_submap_poses_ = submap_data;
 }
 
 mapping::MapById<mapping::NodeId, mapping::TrajectoryNode>
@@ -813,20 +850,18 @@ transform::Rigid3d PoseGraph::ComputeLocalToGlobalTransform(
 mapping::PoseGraph::SubmapData PoseGraph::GetSubmapDataUnderLock(
     const mapping::SubmapId& submap_id) 
 {
-  const auto it = submap_data_.find(submap_id);
-  if (it == submap_data_.end()) {
-    return {};
-  }
-  auto submap = it->data.submap;
-  if (global_submap_poses_.Contains(submap_id)) {
-    // We already have an optimized pose.
-    return {submap,
-            transform::Embed3D(global_submap_poses_.at(submap_id).global_pose)};
-  }
-  // We have to extrapolate.
-  return {submap, ComputeLocalToGlobalTransform(global_submap_poses_,
-                                                submap_id.trajectory_id) *
-                      submap->local_pose()};
+	const auto it = submap_data_.find(submap_id);
+	if (it == submap_data_.end()) {
+		return {};
+	}
+	auto submap = it->data.submap;
+	if (global_submap_poses_.Contains(submap_id)) 
+	{
+		// We already have an optimized pose.
+		return {submap, transform::Embed3D(global_submap_poses_.at(submap_id).global_pose)};
+	}
+	// We have to extrapolate.
+	return {submap, ComputeLocalToGlobalTransform(global_submap_poses_,submap_id.trajectory_id) * submap->local_pose()};
 }
 
 PoseGraph::TrimmingHandle::TrimmingHandle(PoseGraph* const parent)
