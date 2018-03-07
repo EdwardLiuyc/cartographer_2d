@@ -648,15 +648,18 @@ bool PoseGraph::GlobalPoseJump( const transform::Rigid3d& old_global_to_new_glob
 		return false;
 	
 	// 第一次获取到两个路径间的转化的情况
-	if( !got_first_local_to_global_ && old_global_to_new_global.translation().norm() > 0.05 )
+	// better get the submaps.resolution
+	const double resolution = 0.05;
+	if( !got_first_local_to_global_ && old_global_to_new_global.translation().norm() > resolution )
 		got_first_local_to_global_ = true;
 	
 	if( !got_first_local_to_global_ )
 		return false;
 	
 	LOG(INFO) << "old_global_to_new_global : " << old_global_to_new_global;
+	const double jump_distance = 0.5;
 	// 这里判断在获得了第一次的位置后，global位置发生了跳变
-	if( old_global_to_new_global.translation().norm() > 0.5 )
+	if( old_global_to_new_global.translation().norm() > jump_distance )
 	{
 		return true;
 	}
@@ -669,9 +672,9 @@ void PoseGraph::RunOptimization()
 	if (optimization_problem_.submap_data().empty())
 		return;
 
-  // No other thread is accessing the optimization_problem_, constraints_ and
-  // frozen_trajectories_ when executing the Solve. Solve is time consuming, so
-  // not taking the mutex before Solve to avoid blocking foreground processing.
+	// No other thread is accessing the optimization_problem_, constraints_ and
+	// frozen_trajectories_ when executing the Solve. Solve is time consuming, so
+	// not taking the mutex before Solve to avoid blocking foreground processing.
 	// 这里是唯一 solve optimization problem 的地方，也就是说只有在 RunOptimization 的时候是会去解全局的位置并更新的
 	// 所以如果没有后端，永远无法得到基于地图的定位信息
 	optimization_problem_.Solve(constraints_, frozen_trajectories_);
@@ -698,8 +701,9 @@ void PoseGraph::RunOptimization()
 		
 		// 如果发生了跳变，则跳过
 		// 重新计算下一次，不把这次的计算结果放进 global pose 里面
+		// next time, the global sumbap poses is still the formmer one
 		if( GlobalPoseJump( old_global_to_new_global ) )
-			continue;
+			return;
 		
 														// 当前 trajectory id 对应的最后一个元素
 		const mapping::NodeId last_optimized_node_id = std::prev(node_data.EndOfTrajectory(trajectory_id))->id;
@@ -712,15 +716,16 @@ void PoseGraph::RunOptimization()
 			mutable_trajectory_node.global_pose = old_global_to_new_global * mutable_trajectory_node.global_pose;
 		}
 	}
-  
+	
 	// RunOptimization 其实就是一个将 local 和 global 的关系更新的过程
 	global_submap_poses_ = submap_data;
 }
 
 mapping::MapById<mapping::NodeId, mapping::TrajectoryNode>
-PoseGraph::GetTrajectoryNodes() {
-  common::MutexLocker locker(&mutex_);
-  return trajectory_nodes_;
+PoseGraph::GetTrajectoryNodes() 
+{
+	common::MutexLocker locker(&mutex_);
+	return trajectory_nodes_;
 }
 
 sensor::MapByTime<sensor::ImuData> PoseGraph::GetImuData() {
