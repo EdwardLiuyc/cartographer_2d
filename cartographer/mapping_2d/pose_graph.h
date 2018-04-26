@@ -127,6 +127,8 @@ public:
 	void SetInitialTrajectoryPose(int from_trajectory_id, int to_trajectory_id,
                                 const transform::Rigid3d& pose,
                                 const common::Time time) override EXCLUDES(mutex_);
+								
+	inline bool GotLocalToGlobal(){ return got_first_local_to_global_; }
 	  
 private:
 	// The current state of the submap in the background threads. When this

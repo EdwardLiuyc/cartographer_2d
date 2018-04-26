@@ -125,6 +125,8 @@ void ConstraintBuilder::NotifyEndOfNode() {
   ++current_computation_;
 }
 
+// When done 解释为将 constraint builder 当前剩余的所有工作完成后在进行 callback 的工作
+// 所以是讲 callback 塞到线程池里，并非直接执行
 void ConstraintBuilder::WhenDone(
     const std::function<void(const ConstraintBuilder::Result&)>& callback) 
 {

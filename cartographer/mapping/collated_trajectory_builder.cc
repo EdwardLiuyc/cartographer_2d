@@ -58,24 +58,24 @@ void CollatedTrajectoryBuilder::HandleCollatedSensorData(
 {
 	// 前面这段只是为了获取传感器数据传入的频率，并没有实际的作用
 	// 可以暂时屏蔽这一段代码
-// 	auto it = rate_timers_.find(sensor_id);
-// 	if (it == rate_timers_.end()) {
-// 		it = rate_timers_
-// 				.emplace(
-// 					std::piecewise_construct, std::forward_as_tuple(sensor_id),
-// 					std::forward_as_tuple(
-// 						common::FromSeconds(kSensorDataRatesLoggingPeriodSeconds)))
-// 				.first;
-// 	}
-// 	it->second.Pulse(data->GetTime());
-// 
-// 	if (std::chrono::steady_clock::now() - last_logging_time_ >
-// 		common::FromSeconds(kSensorDataRatesLoggingPeriodSeconds)) {
-// 		for (const auto& pair : rate_timers_) {
-// 		LOG(INFO) << pair.first << " rate: " << pair.second.DebugString();
-// 		}
-// 		last_logging_time_ = std::chrono::steady_clock::now();
-// 	}
+	auto it = rate_timers_.find(sensor_id);
+	if (it == rate_timers_.end()) {
+		it = rate_timers_
+				.emplace(
+					std::piecewise_construct, std::forward_as_tuple(sensor_id),
+					std::forward_as_tuple(
+						common::FromSeconds(kSensorDataRatesLoggingPeriodSeconds)))
+				.first;
+	}
+	it->second.Pulse(data->GetTime());
+
+	if (std::chrono::steady_clock::now() - last_logging_time_ >
+		common::FromSeconds(kSensorDataRatesLoggingPeriodSeconds)) {
+		for (const auto& pair : rate_timers_) {
+		LOG(INFO) << pair.first << " rate: " << pair.second.DebugString();
+		}
+		last_logging_time_ = std::chrono::steady_clock::now();
+	}
 
 	// 这里将传感器数据加入到 local trajectory builder
 	data->AddToTrajectoryBuilder(wrapped_trajectory_builder_.get());

@@ -96,8 +96,7 @@ std::vector<mapping::SubmapId> PoseGraph::InitializeGlobalSubmapPoses(
 	const auto end_it = submap_data.EndOfTrajectory(trajectory_id);
 	CHECK(submap_data.BeginOfTrajectory(trajectory_id) != end_it);
 	
-	const mapping::SubmapId last_submap_id_in_this_trajectory 
-		= std::prev(end_it)->id;
+	const mapping::SubmapId last_submap_id_in_this_trajectory = std::prev(end_it)->id;
 	
 	// 这里仍然只有两种情况
 	// insertion_submaps 中的两个 submap 有可能会全在优化问题中，也有可能只有前面那个在优化问题中
@@ -111,8 +110,9 @@ std::vector<mapping::SubmapId> PoseGraph::InitializeGlobalSubmapPoses(
 			first_submap_pose *
 				pose_graph::ComputeSubmapPose(*insertion_submaps[0]).inverse() *
 				pose_graph::ComputeSubmapPose(*insertion_submaps[1]));
-		return {last_submap_id_in_this_trajectory,
-				mapping::SubmapId{trajectory_id, last_submap_id_in_this_trajectory.submap_index + 1}};
+		return { last_submap_id_in_this_trajectory,
+				mapping::SubmapId{trajectory_id, 
+				last_submap_id_in_this_trajectory.submap_index + 1}};
 	}
 	
 	CHECK( submap_data_.at(last_submap_id_in_this_trajectory).submap == insertion_submaps.back() );
@@ -260,7 +260,7 @@ void PoseGraph::ComputeConstraint(const mapping::NodeId& node_id,
 	else if ( global_localization_samplers_[node_id.trajectory_id]->Pulse() ) 
 	{
 		/*
-			目前的参数设定是 
+			默认的参数设定是 
 			global_sampling_ratio = 0.003
 			global_constraint_search_after_n_seconds = 10
 		*/
@@ -409,6 +409,7 @@ void PoseGraph::UpdateTrajectoryConnectivity(const Constraint& constraint)
 void PoseGraph::HandleWorkQueue() 
 {
 	// 一旦所有的 constraint 都计算完了，就会执行传进去的 callback
+// 	LOG(INFO) << "Handle word queue, but not right now!";
 	constraint_builder_.WhenDone(
 		[this](const pose_graph::ConstraintBuilder::Result& result) 
 		{
@@ -447,6 +448,7 @@ void PoseGraph::HandleWorkQueue()
 			LOG(INFO) << "Remaining work items in queue: " << work_queue_->size();
 			// We have to optimize again.
 			HandleWorkQueue();
+// 			LOG(INFO) << "seems like it will never be printed!";
 		});
 }
 
@@ -647,23 +649,28 @@ bool PoseGraph::GlobalPoseJump( const transform::Rigid3d& old_global_to_new_glob
 	if( frozen_trajectories_.size() == 0 )
 		return false;
 	
-	// 第一次获取到两个路径间的转化的情况
-	// better get the submaps.resolution
-	const double resolution = 0.05;
-	if( !got_first_local_to_global_ && old_global_to_new_global.translation().norm() > resolution )
-		got_first_local_to_global_ = true;
-	
+	// 这里最好能取到设定的 submap 的分辨率
+	// 但是 resolution 是trajectory builder的参数，与pose graph无关，这里暂时定为 0.05m
+	// const double resolution = 0.05;
+	const double distance_min = 0.05 * 1.414; // 0.05 * sqrt(2)
+	double old_to_new_distance = old_global_to_new_global.translation().norm();
 	if( !got_first_local_to_global_ )
-		return false;
-	
-	LOG(INFO) << "old_global_to_new_global : " << old_global_to_new_global;
-	const double jump_distance = 0.5;
-	// 这里判断在获得了第一次的位置后，global位置发生了跳变
-	if( old_global_to_new_global.translation().norm() > jump_distance )
 	{
-		return true;
+		// 第一次获取到两个路径间的转化的情况，不属于跳变的情况
+		if( old_to_new_distance > distance_min )
+			got_first_local_to_global_ = true;
+		
+		return false;
 	}
 	
+	LOG(INFO) << "trasnform:" << old_global_to_new_global;
+	const double jump_distance = distance_min * 10.;
+	// 这里判断在获得了第一次的位置后，global位置发生了跳变
+	if( old_to_new_distance > jump_distance )
+	{
+		LOG(WARNING) << "pose jumped for " << old_to_new_distance << "m";
+		return true;
+	}
 	return false;
 }
 
@@ -683,8 +690,11 @@ void PoseGraph::RunOptimization()
 	const auto& submap_data = optimization_problem_.submap_data();
 	const auto& node_data = optimization_problem_.node_data();
 	// 每个 trajectory 上的每个 node 的 global pose 都会获得新的值
+	bool b_pose_has_jumped = false;
+	int  last_trajectory_id = 0;
 	for (const int trajectory_id : node_data.trajectory_ids()) 
 	{
+		last_trajectory_id = trajectory_id;
 		for (const auto& node : node_data.trajectory(trajectory_id)) 
 		{
 			auto& mutable_trajectory_node = trajectory_nodes_.at(node.id);
@@ -697,13 +707,17 @@ void PoseGraph::RunOptimization()
 		// 'optimization_problem_' yet.
 		const auto local_to_new_global = ComputeLocalToGlobalTransform(submap_data, trajectory_id);
 		const auto local_to_old_global = ComputeLocalToGlobalTransform(global_submap_poses_, trajectory_id);
-		const transform::Rigid3d old_global_to_new_global = local_to_new_global * local_to_old_global.inverse();
+		transform::Rigid3d old_global_to_new_global = local_to_new_global * local_to_old_global.inverse();
 		
 		// 如果发生了跳变，则跳过
 		// 重新计算下一次，不把这次的计算结果放进 global pose 里面
 		// next time, the global sumbap poses is still the formmer one
 		if( GlobalPoseJump( old_global_to_new_global ) )
-			return;
+		{	
+			// try 2
+			old_global_to_new_global = transform::Rigid3d::Identity();
+			b_pose_has_jumped = true;
+		}
 		
 														// 当前 trajectory id 对应的最后一个元素
 		const mapping::NodeId last_optimized_node_id = std::prev(node_data.EndOfTrajectory(trajectory_id))->id;
@@ -718,7 +732,33 @@ void PoseGraph::RunOptimization()
 	}
 	
 	// RunOptimization 其实就是一个将 local 和 global 的关系更新的过程
-	global_submap_poses_ = submap_data;
+	// 这个 submap_data 是 optimization_problem_ 里面的计算结果，是无法直接修改的
+	if( !b_pose_has_jumped )
+		global_submap_poses_ = submap_data;
+	else
+	{
+		// 有跳变的情况下，需要对 submap_data 最后一个插入的 pose 最特殊的处理
+		// TODO
+		if( global_submap_poses_.SizeOfTrajectoryOrZero(last_trajectory_id)
+			== submap_data.SizeOfTrajectoryOrZero(last_trajectory_id) )
+			global_submap_poses_ = submap_data;
+		else
+		{
+			pose_graph::SubmapData last_pose_data;
+			for (const auto& submap_id_data : submap_data) 
+			{
+				if( global_submap_poses_.Contains( submap_id_data.id ) )
+				{
+					global_submap_poses_.at( submap_id_data.id ) = submap_data.at( submap_id_data.id );
+					last_pose_data = submap_data.at( submap_id_data.id );
+				}
+				else
+				{
+					global_submap_poses_.Insert(  submap_id_data.id , last_pose_data );
+				}
+			}
+		}
+	}
 }
 
 mapping::MapById<mapping::NodeId, mapping::TrajectoryNode>

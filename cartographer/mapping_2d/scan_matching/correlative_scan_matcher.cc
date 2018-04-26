@@ -35,7 +35,7 @@ SearchParameters::SearchParameters(const double linear_search_window,
 	float max_scan_range = 3.f * resolution;
 	for (const Eigen::Vector3f& point : point_cloud) 
 	{
-		// 获取一个二维点的模（距远点的长度）
+		// 获取一个二维点的模（距原点的长度）
 		const float range = point.head<2>().norm();
 		max_scan_range = std::max(range, max_scan_range);
 	}

@@ -98,88 +98,95 @@ void OptimizationProblem::SetMaxNumIterations(const int32 max_num_iterations) {
 }
 
 void OptimizationProblem::Solve(const std::vector<Constraint>& constraints,
-                                const std::set<int>& frozen_trajectories) {
-  if (node_data_.empty()) {
-    // Nothing to optimize.
-    return;
-  }
+                                const std::set<int>& frozen_trajectories) 
+{
+	if ( node_data_.empty() ) 
+	{
+		// Nothing to optimize.
+		return;
+	}
 
-  ceres::Problem::Options problem_options;
-  ceres::Problem problem(problem_options);
+	ceres::Problem::Options problem_options;
+	ceres::Problem problem(problem_options);
 
-  // Set the starting point.
-  // TODO(hrapp): Move ceres data into SubmapData.
-  mapping::MapById<mapping::SubmapId, std::array<double, 3>> C_submaps;
-  mapping::MapById<mapping::NodeId, std::array<double, 3>> C_nodes;
-  bool first_submap = true;
-  for (const auto& submap_id_data : submap_data_) {
-    const bool frozen =
-        frozen_trajectories.count(submap_id_data.id.trajectory_id) != 0;
-    C_submaps.Insert(submap_id_data.id,
-                     FromPose(submap_id_data.data.global_pose));
-    problem.AddParameterBlock(C_submaps.at(submap_id_data.id).data(), 3);
-    if (first_submap || frozen) {
-      first_submap = false;
-      // Fix the pose of the first submap or all submaps of a frozen
-      // trajectory.
-      problem.SetParameterBlockConstant(C_submaps.at(submap_id_data.id).data());
-    }
-  }
-  for (const auto& node_id_data : node_data_) {
-    const bool frozen =
-        frozen_trajectories.count(node_id_data.id.trajectory_id) != 0;
-    C_nodes.Insert(node_id_data.id, FromPose(node_id_data.data.pose));
-    problem.AddParameterBlock(C_nodes.at(node_id_data.id).data(), 3);
-    if (frozen) {
-      problem.SetParameterBlockConstant(C_nodes.at(node_id_data.id).data());
-    }
-  }
-  // Add cost functions for intra- and inter-submap constraints.
-  for (const Constraint& constraint : constraints) {
-    problem.AddResidualBlock(
-        new ceres::AutoDiffCostFunction<SpaCostFunction, 3, 3, 3>(
-            new SpaCostFunction(constraint.pose)),
-        // Only loop closure constraints should have a loss function.
-        constraint.tag == Constraint::INTER_SUBMAP
-            ? new ceres::HuberLoss(options_.huber_scale())
-            : nullptr,
-        C_submaps.at(constraint.submap_id).data(),
-        C_nodes.at(constraint.node_id).data());
-  }
+	// Set the starting point.
+	// TODO(hrapp): Move ceres data into SubmapData.
+	mapping::MapById<mapping::SubmapId, std::array<double, 3>> C_submaps;
+	mapping::MapById<mapping::NodeId, std::array<double, 3>> C_nodes;
+	bool first_submap = true;
+	for (const auto& submap_id_data : submap_data_) 
+	{
+		const bool frozen = frozen_trajectories.count(submap_id_data.id.trajectory_id) != 0;
+		C_submaps.Insert(submap_id_data.id, FromPose(submap_id_data.data.global_pose));
+		problem.AddParameterBlock( C_submaps.at(submap_id_data.id).data(), 3 );
+		if (first_submap || frozen) 
+		{
+			first_submap = false;
+			// Fix the pose of the first submap or all submaps of a frozen
+			// trajectory.
+			problem.SetParameterBlockConstant(C_submaps.at(submap_id_data.id).data());
+		}
+	}
+	
+	for (const auto& node_id_data : node_data_) 
+	{
+		const bool frozen = frozen_trajectories.count(node_id_data.id.trajectory_id) != 0;
+		C_nodes.Insert(node_id_data.id, FromPose(node_id_data.data.pose));
+		problem.AddParameterBlock(C_nodes.at(node_id_data.id).data(), 3);
+		if (frozen) 
+		{
+			problem.SetParameterBlockConstant(C_nodes.at(node_id_data.id).data());
+		}
+	}
+	// Add cost functions for intra- and inter-submap constraints.
+	for (const Constraint& constraint : constraints) 
+	{
+		problem.AddResidualBlock(
+			new ceres::AutoDiffCostFunction<SpaCostFunction, 3, 3, 3>(new SpaCostFunction(constraint.pose)),
+			// Only loop closure constraints should have a loss function.
+			constraint.tag == Constraint::INTER_SUBMAP
+				? new ceres::HuberLoss(options_.huber_scale())
+				: nullptr,
+			C_submaps.at(constraint.submap_id).data(),
+			C_nodes.at(constraint.node_id).data());
+	}
 
-  // Add penalties for violating odometry or changes between consecutive nodes
-  // if odometry is not available.
-  for (auto node_it = node_data_.begin(); node_it != node_data_.end();) {
-    const int trajectory_id = node_it->id.trajectory_id;
-    const auto trajectory_end = node_data_.EndOfTrajectory(trajectory_id);
-    if (frozen_trajectories.count(trajectory_id) != 0) {
-      node_it = trajectory_end;
-      continue;
-    }
+	// Add penalties for violating odometry or changes between consecutive nodes
+	// if odometry is not available.
+	for (auto node_it = node_data_.begin(); node_it != node_data_.end();) 
+	{
+		const int trajectory_id = node_it->id.trajectory_id;
+		const auto trajectory_end = node_data_.EndOfTrajectory(trajectory_id);
+		if ( frozen_trajectories.count(trajectory_id) != 0 ) 
+		{
+			node_it = trajectory_end;
+			continue;
+		}
 
-    auto prev_node_it = node_it;
-    for (++node_it; node_it != trajectory_end; ++node_it) {
-      const mapping::NodeId first_node_id = prev_node_it->id;
-      const NodeData& first_node_data = prev_node_it->data;
-      prev_node_it = node_it;
-      const mapping::NodeId second_node_id = node_it->id;
-      const NodeData& second_node_data = node_it->data;
+		auto prev_node_it = node_it;
+		for (++node_it; node_it != trajectory_end; ++node_it) 
+		{
+			const mapping::NodeId first_node_id = prev_node_it->id;
+			const NodeData& first_node_data = prev_node_it->data;
+			prev_node_it = node_it;
+			const mapping::NodeId second_node_id = node_it->id;
+			const NodeData& second_node_data = node_it->data;
 
-      if (second_node_id.node_index != first_node_id.node_index + 1) {
-        continue;
-      }
+			if (second_node_id.node_index != first_node_id.node_index + 1) 
+			{
+				continue;
+			}
 
-      const transform::Rigid3d relative_pose =
-          ComputeRelativePose(trajectory_id, first_node_data, second_node_data);
-      problem.AddResidualBlock(
-          new ceres::AutoDiffCostFunction<SpaCostFunction, 3, 3, 3>(
-              new SpaCostFunction(Constraint::Pose{
-                  relative_pose, options_.consecutive_node_translation_weight(),
-                  options_.consecutive_node_rotation_weight()})),
-          nullptr /* loss function */, C_nodes.at(first_node_id).data(),
-          C_nodes.at(second_node_id).data());
-    }
-  }
+			const transform::Rigid3d relative_pose = ComputeRelativePose(trajectory_id, first_node_data, second_node_data);
+			problem.AddResidualBlock(
+				new ceres::AutoDiffCostFunction<SpaCostFunction, 3, 3, 3>(
+					new SpaCostFunction(Constraint::Pose{
+						relative_pose, options_.consecutive_node_translation_weight(),
+						options_.consecutive_node_rotation_weight()})),
+				nullptr /* loss function */, C_nodes.at(first_node_id).data(),
+				C_nodes.at(second_node_id).data());
+		}
+	}
 
 	// Solve.
 	ceres::Solver::Summary summary;
@@ -188,6 +195,8 @@ void OptimizationProblem::Solve(const std::vector<Constraint>& constraints,
 		LOG(INFO) << summary.FullReport();
 
 	// Store the result.
+	// solve 的结果分别是当前 submap 的全局位姿和 node 的位姿
+	// 现在的问题是这个 global pose 如果出错，该如何修正？
 	for (const auto& C_submap_id_data : C_submaps) {
 		submap_data_.at(C_submap_id_data.id).global_pose = ToPose(C_submap_id_data.data);
 	}
