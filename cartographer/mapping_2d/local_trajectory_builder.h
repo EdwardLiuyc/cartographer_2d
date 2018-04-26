@@ -20,7 +20,6 @@
 #include <memory>
 
 #include "cartographer/common/time.h"
-#include "cartographer/mapping/pose_estimate.h"
 #include "cartographer/mapping/pose_extrapolator.h"
 #include "cartographer/mapping_2d/proto/local_trajectory_builder_options.pb.h"
 #include "cartographer/mapping_2d/scan_matching/ceres_scan_matcher.h"
