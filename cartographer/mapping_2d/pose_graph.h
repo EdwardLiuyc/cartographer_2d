@@ -129,6 +129,7 @@ public:
                                 const common::Time time) override EXCLUDES(mutex_);
 								
 	inline bool GotLocalToGlobal(){ return got_first_local_to_global_; }
+	int32_t GetWorkQueueCount() REQUIRES(mutex_);
 	  
 private:
 	// The current state of the submap in the background threads. When this

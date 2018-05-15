@@ -296,6 +296,15 @@ int MapBuilder::num_trajectory_builders() const {
   return trajectory_builders_.size();
 }
 
+int32_t cartographer::mapping::MapBuilder::GetRemainingWorkCount()
+{
+	if (options_.use_trajectory_builder_2d()) 
+		return pose_graph_2d_->GetWorkQueueCount();
+	
+	return -1;
+}
+
+
 PoseGraph* MapBuilder::pose_graph() { return pose_graph_; }
 
 }  // namespace mapping

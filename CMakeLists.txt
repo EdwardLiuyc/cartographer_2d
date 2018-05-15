@@ -16,6 +16,10 @@ cmake_minimum_required(VERSION 2.8.12)  # Ships with Ubuntu 14.04 (Trusty)
 
 project(cartographer)
 
+message(" *** add macro: EIGEN_USE_MKL_ALL for Eigen *** ")
+ADD_DEFINITIONS(-DEIGEN_USE_MKL_ALL -DMKL_LP64)
+include_directories(/opt/intel/mkl/include )
+
 set(CARTOGRAPHER_MAJOR_VERSION 1)
 set(CARTOGRAPHER_MINOR_VERSION 0)
 set(CARTOGRAPHER_PATCH_VERSION 0)

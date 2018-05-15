@@ -117,6 +117,8 @@ public:
 	int num_trajectory_builders() const;
 
 	mapping::PoseGraph* pose_graph();
+	
+	int32_t GetRemainingWorkCount();
 
 private:
 	const proto::MapBuilderOptions options_;

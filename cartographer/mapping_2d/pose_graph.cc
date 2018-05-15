@@ -663,7 +663,7 @@ bool PoseGraph::GlobalPoseJump( const transform::Rigid3d& old_global_to_new_glob
 		return false;
 	}
 	
-	LOG(INFO) << "trasnform:" << old_global_to_new_global;
+// 	LOG(INFO) << "trasnform:" << old_global_to_new_global;
 	const double jump_distance = distance_min * 10.;
 	// 这里判断在获得了第一次的位置后，global位置发生了跳变
 	if( old_to_new_distance > jump_distance )
@@ -857,6 +857,16 @@ PoseGraph::GetAllSubmapData() {
   }
   return submaps;
 }
+
+int32_t cartographer::mapping_2d::PoseGraph::GetWorkQueueCount()
+{
+	common::MutexLocker locker(&mutex_);
+	if( work_queue_ == nullptr )
+		return 0;
+	
+	return work_queue_->size();
+}
+
 
 /*
  * 传参：
