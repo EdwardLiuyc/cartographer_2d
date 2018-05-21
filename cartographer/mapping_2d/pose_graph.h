@@ -118,6 +118,7 @@ public:
 	std::vector<Constraint> constraints() override EXCLUDES(mutex_);
 
 	void FinishTrajectory(int trajectory_id) override;
+	bool IsTrajectoryFinished(int trajectory_id) override;
 	void FreezeTrajectory(int trajectory_id) override;
   
 	void RunFinalOptimization() override;
@@ -162,6 +163,7 @@ private:
 		int num_submaps(int trajectory_id) const override;
 		void MarkSubmapAsTrimmed(const mapping::SubmapId& submap_id)
 			REQUIRES(parent_->mutex_) override;
+		bool IsFinished(int trajectory_id) const override;
 
 	private:
 		PoseGraph* const parent_;
@@ -265,6 +267,7 @@ private:
 	// 这里保存了所有的 submap，包括所有的 trajectory 里的 submap
 	mapping::MapById<mapping::SubmapId, SubmapData> submap_data_ GUARDED_BY(mutex_);
 	// Global submap poses currently used for displaying data.
+	// pose_graph::SubmapData 这个结构体里面只有一个成员 global pose
 	mapping::MapById<mapping::SubmapId, pose_graph::SubmapData> global_submap_poses_ GUARDED_BY(mutex_);
 
 	// Data that are currently being shown.
@@ -278,6 +281,9 @@ private:
 
 	// Set of all frozen trajectories not being optimized.
 	std::set<int> frozen_trajectories_ GUARDED_BY(mutex_);
+	
+	// Set of all finished trajectories.
+	std::set<int> finished_trajectories_ GUARDED_BY(mutex_);
 
 	// Set of all initial trajectory poses.
 	std::map<int, InitialTrajectoryPose> initial_trajectory_poses_ GUARDED_BY(mutex_);

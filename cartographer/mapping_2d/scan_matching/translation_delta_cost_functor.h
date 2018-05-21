@@ -24,18 +24,18 @@ namespace cartographer {
 namespace mapping_2d {
 namespace scan_matching {
 
-// Computes the cost of translating the initial pose estimate. Cost increases
-// with the solution's distance from the initial estimate.
-class TranslationDeltaCostFunctor {
- public:
+// Computes the cost of translating 'pose' to 'target_translation'.
+// Cost increases with the solution's distance from 'target_translation'.
+class TranslationDeltaCostFunctor 
+{
+public:
   // Constructs a new TranslationDeltaCostFunctor from the given
-  // 'initial_pose_estimate' (x, y, theta).
-  explicit TranslationDeltaCostFunctor(
-      const double scaling_factor,
-      const transform::Rigid2d& initial_pose_estimate)
-      : scaling_factor_(scaling_factor),
-        x_(initial_pose_estimate.translation().x()),
-        y_(initial_pose_estimate.translation().y()) {}
+  // 'target_translation' (x, y).
+	explicit TranslationDeltaCostFunctor(
+		const double scaling_factor, const Eigen::Vector2d& target_translation)
+		: scaling_factor_(scaling_factor),
+        x_(target_translation.x()),
+        y_(target_translation.y()) {}
 
   TranslationDeltaCostFunctor(const TranslationDeltaCostFunctor&) = delete;
   TranslationDeltaCostFunctor& operator=(const TranslationDeltaCostFunctor&) =

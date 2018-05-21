@@ -29,6 +29,11 @@ PureLocalizationTrimmer::PureLocalizationTrimmer(const int trajectory_id,
 
 void PureLocalizationTrimmer::Trim(Trimmable* const pose_graph) 
 {
+	if (pose_graph->IsFinished(trajectory_id_)) 
+	{
+		num_submaps_to_keep_ = 0;
+	}
+	
 	int32_t submap_index_to_trim_next = 0;
 	// 微调需要保留最后的若干个 submap，其他的submap都需要标记，之后交给 pose_graph 处理
 	while ( pose_graph->num_submaps(trajectory_id_) > num_submaps_to_keep_ ) 
@@ -38,7 +43,12 @@ void PureLocalizationTrimmer::Trim(Trimmable* const pose_graph)
 			SubmapId{trajectory_id_, submap_index_to_trim_next});
 		++num_submaps_trimmed_;
 	}
+	
+	if (num_submaps_to_keep_ == 0)
+		finished_ = true;
 }
+
+bool PureLocalizationTrimmer::IsFinished() { return finished_; }
 
 }  // namespace mapping
 }  // namespace cartographer

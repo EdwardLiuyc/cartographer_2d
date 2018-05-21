@@ -18,23 +18,13 @@
 #define CARTOGRAPHER_MAPPING_MAP_BUILDER_H_
 
 #include <memory>
-#include <string>
 #include <unordered_map>
-#include <unordered_set>
-#include <vector>
 
-#include "Eigen/Geometry"
-#include "cartographer/common/lua_parameter_dictionary.h"
-#include "cartographer/common/port.h"
+#include "cartographer/mapping/map_builder_interface.h"
 #include "cartographer/common/thread_pool.h"
-#include "cartographer/io/proto_stream.h"
 #include "cartographer/mapping/id.h"
 #include "cartographer/mapping/pose_graph.h"
 #include "cartographer/mapping/proto/map_builder_options.pb.h"
-#include "cartographer/mapping/proto/submap_visualization.pb.h"
-#include "cartographer/mapping/proto/trajectory_builder_options.pb.h"
-#include "cartographer/mapping/submaps.h"
-#include "cartographer/mapping/trajectory_builder.h"
 #include "cartographer/mapping_2d/pose_graph.h"
 #include "cartographer/sensor/collator.h"
 
@@ -53,7 +43,7 @@ proto::MapBuilderOptions CreateMapBuilderOptions(
 // trajectory builder 用来生成本地的submap
 // pose gragh  用来做后端的闭环（gragh based）
 // sensor collator 用来收集传感器数据，并做初级的处理
-class MapBuilder 
+class MapBuilder : public MapBuilderInterface
 {
 public:
 	 
@@ -72,7 +62,7 @@ public:
 
 	MapBuilder(const proto::MapBuilderOptions& options,
 				const LocalSlamResultCallback& local_slam_result_callback);
-	~MapBuilder();
+	~MapBuilder() override;
 
 	MapBuilder(const MapBuilder&) = delete;
 	MapBuilder& operator=(const MapBuilder&) = delete;
@@ -80,22 +70,22 @@ public:
 	// Creates a new trajectory builder and returns its index.
 	int AddTrajectoryBuilder(
 		const std::unordered_set<std::string>& expected_sensor_ids,
-		const proto::TrajectoryBuilderOptions& trajectory_options);
+		const proto::TrajectoryBuilderOptions& trajectory_options) override;
 
 	// Creates a new trajectory and returns its index. Querying the trajectory
 	// builder for it will return 'nullptr'.
-	int AddTrajectoryForDeserialization();
+	int AddTrajectoryForDeserialization() override;
 
 	// Returns the TrajectoryBuilder corresponding to the specified
 	// 'trajectory_id' or 'nullptr' if the trajectory has no corresponding
 	// builder.
 	// 这个接口将内部的 trajectory_builder 暴露给外部来使用
 	// 外部也主要是使用 trajectory_builder 来接受所有的传感器数据
-	mapping::TrajectoryBuilder* GetTrajectoryBuilder(int trajectory_id) const;
+	mapping::TrajectoryBuilder* GetTrajectoryBuilder(int trajectory_id) const override;
 
 	// Marks the TrajectoryBuilder corresponding to 'trajectory_id' as finished,
 	// i.e. no further sensor data is expected.
-	void FinishTrajectory(int trajectory_id);
+	void FinishTrajectory(int trajectory_id) override;
 
 	// Must only be called if at least one unfinished trajectory exists. Returns
 	// the ID of the trajectory that needs more data before the MapBuilder is
@@ -105,14 +95,14 @@ public:
 	// Fills the SubmapQuery::Response corresponding to 'submap_id'. Returns an
 	// error string on failure, or an empty string on success.
 	std::string SubmapToProto(const SubmapId& submap_id,
-								proto::SubmapQuery::Response* response);
+								proto::SubmapQuery::Response* response) override;
 
 	// Serializes the current state to a proto stream.
-	void SerializeState(io::ProtoStreamWriter* writer);
+	void SerializeState(io::ProtoStreamWriter* writer) override;
 
 	// Loads submaps from a proto stream into a new frozen trajectory.
 	// 读入一个现有的地图，这个功能很重要，读入的地图必须是上面这个函数生成的文件
-	void LoadMap(io::ProtoStreamReader* reader);
+	void LoadMap(io::ProtoStreamReader* reader) override;
 
 	int num_trajectory_builders() const;
 

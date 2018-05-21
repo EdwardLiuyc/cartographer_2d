@@ -429,6 +429,12 @@ void PoseGraph::HandleWorkQueue()
 			{
 				trimmer->Trim(&trimming_handle);
 			}
+			trimmers_.erase(
+				std::remove_if( trimmers_.begin(), trimmers_.end(),
+                [](std::unique_ptr<mapping::PoseGraphTrimmer>& trimmer) {
+                  return trimmer->IsFinished();
+                }),
+				trimmers_.end());
 
 			num_nodes_since_last_loop_closure_ = 0;
 			run_loop_closure_ = false;
@@ -462,7 +468,7 @@ void PoseGraph::WaitForAllComputations()
 	while (!locker.AwaitWithTimeout(
 		[this]() REQUIRES(mutex_) 
 		{
-			return constraint_builder_.GetNumFinishedNodes() == num_trajectory_nodes_;
+			return ( (constraint_builder_.GetNumFinishedNodes() == num_trajectory_nodes_) && !work_queue_ );
 		},
 		common::FromSeconds(1.))) 
 	{
@@ -488,9 +494,24 @@ void PoseGraph::WaitForAllComputations()
 }
 
 void PoseGraph::FinishTrajectory(const int trajectory_id) {
-  // TODO(jihoonl): Add a logic to notify trimmers to finish the given
-  // trajectory.
+	AddWorkItem([this, trajectory_id]() REQUIRES(mutex_) {
+    CHECK_EQ(finished_trajectories_.count(trajectory_id), 0);
+    finished_trajectories_.insert(trajectory_id);
+
+    auto submap_data = optimization_problem_.submap_data();
+    for (auto submap_id_data : submap_data) {
+      submap_data_.at(submap_id_data.id).state = SubmapState::kFinished;
+    }
+    // TODO(jihoonl): Refactor HandleWorkQueue() logic from
+    // ComputeConstraintsForNode and call from here
+  });
 }
+
+bool cartographer::mapping_2d::PoseGraph::IsTrajectoryFinished(int trajectory_id)
+{
+	return finished_trajectories_.count(trajectory_id) > 0;
+}
+
 
 /*
  这个函数是在 loadmap 时调用的，也仅在此情况下调用
@@ -657,6 +678,7 @@ bool PoseGraph::GlobalPoseJump( const transform::Rigid3d& old_global_to_new_glob
 	if( !got_first_local_to_global_ )
 	{
 		// 第一次获取到两个路径间的转化的情况，不属于跳变的情况
+		// 这里的判断有问题，不应该用这个来判断是否获取了 local to global 的 transform TODO
 		if( old_to_new_distance > distance_min )
 			got_first_local_to_global_ = true;
 		
@@ -689,12 +711,8 @@ void PoseGraph::RunOptimization()
 
 	const auto& submap_data = optimization_problem_.submap_data();
 	const auto& node_data = optimization_problem_.node_data();
-	// 每个 trajectory 上的每个 node 的 global pose 都会获得新的值
-	bool b_pose_has_jumped = false;
-	int  last_trajectory_id = 0;
 	for (const int trajectory_id : node_data.trajectory_ids()) 
 	{
-		last_trajectory_id = trajectory_id;
 		for (const auto& node : node_data.trajectory(trajectory_id)) 
 		{
 			auto& mutable_trajectory_node = trajectory_nodes_.at(node.id);
@@ -712,12 +730,12 @@ void PoseGraph::RunOptimization()
 		// 如果发生了跳变，则跳过
 		// 重新计算下一次，不把这次的计算结果放进 global pose 里面
 		// next time, the global sumbap poses is still the formmer one
-		if( GlobalPoseJump( old_global_to_new_global ) )
-		{	
-			// try 2
-			old_global_to_new_global = transform::Rigid3d::Identity();
-			b_pose_has_jumped = true;
-		}
+// 		if( GlobalPoseJump( old_global_to_new_global ) )
+// 		{	
+// 			// try 2
+// 			old_global_to_new_global = transform::Rigid3d::Identity();
+// 			b_pose_has_jumped = true;
+// 		}
 		
 														// 当前 trajectory id 对应的最后一个元素
 		const mapping::NodeId last_optimized_node_id = std::prev(node_data.EndOfTrajectory(trajectory_id))->id;
@@ -733,32 +751,7 @@ void PoseGraph::RunOptimization()
 	
 	// RunOptimization 其实就是一个将 local 和 global 的关系更新的过程
 	// 这个 submap_data 是 optimization_problem_ 里面的计算结果，是无法直接修改的
-	if( !b_pose_has_jumped )
-		global_submap_poses_ = submap_data;
-	else
-	{
-		// 有跳变的情况下，需要对 submap_data 最后一个插入的 pose 最特殊的处理
-		// TODO
-		if( global_submap_poses_.SizeOfTrajectoryOrZero(last_trajectory_id)
-			== submap_data.SizeOfTrajectoryOrZero(last_trajectory_id) )
-			global_submap_poses_ = submap_data;
-		else
-		{
-			pose_graph::SubmapData last_pose_data;
-			for (const auto& submap_id_data : submap_data) 
-			{
-				if( global_submap_poses_.Contains( submap_id_data.id ) )
-				{
-					global_submap_poses_.at( submap_id_data.id ) = submap_data.at( submap_id_data.id );
-					last_pose_data = submap_data.at( submap_id_data.id );
-				}
-				else
-				{
-					global_submap_poses_.Insert(  submap_id_data.id , last_pose_data );
-				}
-			}
-		}
-	}
+	global_submap_poses_ = submap_data;
 }
 
 mapping::MapById<mapping::NodeId, mapping::TrajectoryNode>
@@ -984,6 +977,12 @@ void PoseGraph::TrimmingHandle::MarkSubmapAsTrimmed(
     parent_->optimization_problem_.TrimTrajectoryNode(node_id);
   }
 }
+
+bool cartographer::mapping_2d::PoseGraph::TrimmingHandle::IsFinished(int trajectory_id) const
+{
+	return parent_->IsTrajectoryFinished(trajectory_id);
+}
+
 
 }  // namespace mapping_2d
 }  // namespace cartographer
