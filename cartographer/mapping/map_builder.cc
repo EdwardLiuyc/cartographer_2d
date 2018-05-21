@@ -304,6 +304,20 @@ int32_t cartographer::mapping::MapBuilder::GetRemainingWorkCount()
 	return -1;
 }
 
+std::vector<std::vector<int>> MapBuilder::GetConnectedTrajectories()
+{
+	if (options_.use_trajectory_builder_2d()) 
+		return pose_graph_2d_->GetConnectedTrajectories();
+	
+	return std::vector<std::vector<int>>();
+}
+
+bool cartographer::mapping::MapBuilder::IsConnected(int32_t trajectory_id_a, int32_t trajectory_id_b)
+{
+	CHECK( options_.use_trajectory_builder_2d() );
+	
+	return pose_graph_2d_->TransitivelyConnected( trajectory_id_a, trajectory_id_b );
+}
 
 PoseGraph* MapBuilder::pose_graph() { return pose_graph_; }
 

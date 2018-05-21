@@ -128,7 +128,8 @@ public:
                                 const transform::Rigid3d& pose,
                                 const common::Time time) override EXCLUDES(mutex_);
 								
-	inline bool GotLocalToGlobal(){ return got_first_local_to_global_; }
+	inline bool TransitivelyConnected( int32_t trajectory_id_a, int32_t trajectory_id_b )
+	{ return trajectory_connectivity_state_.TransitivelyConnected(trajectory_id_a, trajectory_id_b); }
 	int32_t GetWorkQueueCount() REQUIRES(mutex_);
 	  
 private:

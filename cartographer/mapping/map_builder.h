@@ -119,6 +119,9 @@ public:
 	mapping::PoseGraph* pose_graph();
 	
 	int32_t GetRemainingWorkCount();
+	std::vector<std::vector<int>> GetConnectedTrajectories();
+	
+	bool IsConnected( int32_t trajectory_id_a, int32_t trajectory_id_b );
 
 private:
 	const proto::MapBuilderOptions options_;
