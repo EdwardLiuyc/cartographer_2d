@@ -19,7 +19,7 @@
 #include "cartographer/mapping_2d/scan_matching/ceres_scan_matcher.h"
 #include "cartographer/mapping_2d/scan_matching/fast_correlative_scan_matcher.h"
 #include "cartographer/sensor/voxel_filter.h"
- 
+
 namespace cartographer {
 namespace mapping {
 namespace pose_graph {
