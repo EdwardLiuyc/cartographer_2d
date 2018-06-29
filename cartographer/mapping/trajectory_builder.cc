@@ -17,7 +17,6 @@
 #include "cartographer/mapping/trajectory_builder.h"
 
 #include "cartographer/mapping_2d/local_trajectory_builder_options.h"
-#include "cartographer/mapping_3d/local_trajectory_builder_options.h"
 
 namespace cartographer {
 namespace mapping {
@@ -28,9 +27,6 @@ proto::TrajectoryBuilderOptions CreateTrajectoryBuilderOptions(
   *options.mutable_trajectory_builder_2d_options() =
       mapping_2d::CreateLocalTrajectoryBuilderOptions(
           parameter_dictionary->GetDictionary("trajectory_builder_2d").get());
-  *options.mutable_trajectory_builder_3d_options() =
-      mapping_3d::CreateLocalTrajectoryBuilderOptions(
-          parameter_dictionary->GetDictionary("trajectory_builder_3d").get());
   options.set_pure_localization(
       parameter_dictionary->GetBool("pure_localization"));
   return options;

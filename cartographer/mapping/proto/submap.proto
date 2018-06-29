@@ -16,7 +16,6 @@ syntax = "proto3";
 
 package cartographer.mapping.proto;
 
-import "cartographer/mapping_3d/proto/hybrid_grid.proto";
 import "cartographer/mapping_2d/proto/probability_grid.proto";
 import "cartographer/transform/proto/transform.proto";
 
@@ -29,10 +28,10 @@ message Submap2D {
 }
 
 // Serialized state of a mapping_3d::Submap.
-message Submap3D {
-  transform.proto.Rigid3d local_pose = 1;
-  int32 num_range_data = 2;
-  bool finished = 3;
-  mapping_3d.proto.HybridGrid high_resolution_hybrid_grid = 4;
-  mapping_3d.proto.HybridGrid low_resolution_hybrid_grid = 5;
-}
+// message Submap3D {
+//   transform.proto.Rigid3d local_pose = 1;
+//   int32 num_range_data = 2;
+//   bool finished = 3;
+//   mapping_3d.proto.HybridGrid high_resolution_hybrid_grid = 4;
+//   mapping_3d.proto.HybridGrid low_resolution_hybrid_grid = 5;
+// }

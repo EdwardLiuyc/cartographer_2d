@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef CARTOGRAPHER_MAPPING_3D_HYBRID_GRID_H_
-#define CARTOGRAPHER_MAPPING_3D_HYBRID_GRID_H_
+#ifndef CARTOGRAPHER_MAPPING_2D_HYBRID_GRID_H_
+#define CARTOGRAPHER_MAPPING_2D_HYBRID_GRID_H_
 
 #include <array>
 #include <cmath>
@@ -28,12 +28,12 @@
 #include "cartographer/common/math.h"
 #include "cartographer/common/port.h"
 #include "cartographer/mapping/probability_values.h"
-#include "cartographer/mapping_3d/proto/hybrid_grid.pb.h"
+#include "cartographer/mapping_2d/proto/hybrid_grid.pb.h"
 #include "cartographer/transform/transform.h"
 #include "glog/logging.h"
 
 namespace cartographer {
-namespace mapping_3d {
+namespace mapping_2d {
 
 // Converts an 'index' with each dimension from 0 to 2^'bits' - 1 to a flat
 // z-major index.
@@ -540,7 +540,7 @@ class HybridGrid : public HybridGridBase<uint16> {
   std::vector<ValueType*> update_indices_;
 };
 
-}  // namespace mapping_3d
+}  // namespace mapping_2d
 }  // namespace cartographer
 
-#endif  // CARTOGRAPHER_MAPPING_3D_HYBRID_GRID_H_
+#endif  // CARTOGRAPHER_MAPPING_2D_HYBRID_GRID_H_
