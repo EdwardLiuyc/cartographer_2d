@@ -18,7 +18,7 @@
 #define CARTOGRAPHER_SENSOR_VOXEL_FILTER_H_
 
 #include "cartographer/common/lua_parameter_dictionary.h"
-#include "cartographer/mapping_2d/hybrid_grid.h"
+#include "cartographer/mapping_3d/hybrid_grid.h"
 #include "cartographer/sensor/point_cloud.h"
 #include "cartographer/sensor/proto/adaptive_voxel_filter_options.pb.h"
 
@@ -47,7 +47,7 @@ class VoxelFilter {
   const PointCloud& point_cloud() const;
 
  private:
-  mapping_2d::HybridGridBase<uint8> voxels_;
+  mapping_3d::HybridGridBase<uint8> voxels_;
   PointCloud point_cloud_;
 };
 

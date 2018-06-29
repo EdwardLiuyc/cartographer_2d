@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "cartographer/mapping_2d/hybrid_grid.h"
+#include "cartographer/mapping_3d/hybrid_grid.h"
 
 #include <map>
 #include <random>
@@ -23,7 +23,7 @@
 #include "gmock/gmock.h"
 
 namespace cartographer {
-namespace mapping_2d {
+namespace mapping_3d {
 namespace {
 
 TEST(HybridGridTest, ApplyOdds) {
@@ -227,5 +227,5 @@ TEST_F(RandomHybridGridTest, FromProto) {
 }
 
 }  // namespace
-}  // namespace mapping_2d
+}  // namespace mapping_3d
 }  // namespace cartographer
